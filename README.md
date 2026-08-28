@@ -19,12 +19,24 @@ Open http://localhost:8080
 
 ```
 resume/site/
-  index.html      — main page
-  css/style.css   — styles + animations
-  js/main.js      — scroll reveal, nav
+  index.html          — визитка
+  resume.html         — мобильное резюме
+  presentation.html   — презентация (10 слайдов)
+  css/style.css
+  css/resume-mobile.css
+  css/presentation.css
+  js/main.js
+  js/presentation.js
   assets/photo.png
   vercel.json
 ```
+
+## Презентация
+
+Откройте `presentation.html`:
+- **← →** или **пробел** — листать слайды
+- **Свайп** на телефоне
+- **⛶ Полный экран** — для показа клиенту
 
 ## Contact links
 

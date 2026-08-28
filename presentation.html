@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Презентация — Алихан Скяев, разработчик и автоматизация бизнес-процессов">
+  <meta name="theme-color" content="#080c16">
+  <title>Презентация — Алихан Скяев</title>
+  <link rel="stylesheet" href="css/presentation.css">
+</head>
+<body>
+
+  <div class="deck-bg" aria-hidden="true"></div>
+  <div class="progress-bar" id="progress"></div>
+
+  <div class="top-bar">
+    <a href="index.html" class="top-btn">← Визитка</a>
+    <button class="top-btn" id="fullscreen" type="button">⛶ Полный экран</button>
+  </div>
+
+  <div class="deck">
+
+    <!-- SLIDE 1: Title -->
+    <section class="slide slide-title active">
+      <div class="title-photo-wrap">
+        <div class="title-photo-ring"></div>
+        <img class="title-photo" src="assets/photo.png" alt="Алихан Скяев">
+      </div>
+      <div class="title-content">
+        <div class="title-badge">● Открыт к проектам</div>
+        <h1>Алихан <em>Артурович Скяев</em></h1>
+        <p class="slide-sub">Разработчик · Специалист по автоматизации бизнес-процессов · Full-stack</p>
+        <div class="title-meta">
+          <span class="meta-pill">📍 Владикавказ</span>
+          <span class="meta-pill">💼 5 лет опыта</span>
+          <span class="meta-pill">🎓 КУБГУ — ИСиТ</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2: About -->
+    <section class="slide">
+      <div class="slide-body">
+        <div class="slide-label">О себе</div>
+        <h2>Понимаю бизнес — собираю систему</h2>
+        <p class="slide-sub" style="margin-bottom:24px">
+          Помогаю компаниям перевести ручную работу — заявки в мессенджерах, Excel, разрозненные программы —
+          в управляемую цифровую систему.
+        </p>
+        <ul class="slide-list">
+          <li>Сначала <strong>разбираю процесс</strong> — где теряются деньги, время и контроль</li>
+          <li>Затем <strong>проектирую, разрабатываю, тестирую</strong> и запускаю на сервере</li>
+          <li>Говорю простым языком с руководителем и технически с IT-отделом</li>
+          <li>Не делаю «ещё один сайт» — собираю <strong>работающую систему под задачу бизнеса</strong></li>
+        </ul>
+      </div>
+    </section>
+
+    <!-- SLIDE 3: Value -->
+    <section class="slide">
+      <div class="slide-body">
+        <div class="slide-label">Ценность</div>
+        <h2>Чем полезен вашему бизнесу</h2>
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-icon">📋</div>
+            <h3>Хаос в заявках и статусах</h3>
+            <p>Единый поток: кто создал → кто обработал → что изменилось → кто уведомлён</p>
+          </div>
+          <div class="card">
+            <div class="card-icon">🔗</div>
+            <h3>Данные в нескольких местах</h3>
+            <p>Связываю 1С, CRM, Telegram, кассу — без двойного ввода</p>
+          </div>
+          <div class="card">
+            <div class="card-icon">🏪</div>
+            <h3>Нет контроля на точках</h3>
+            <p>Панели для сотрудников и руководства: кто, когда, по какому правилу</p>
+          </div>
+          <div class="card">
+            <div class="card-icon">⚡</div>
+            <h3>«На коленке» работает</h3>
+            <p>Анализ → проектирование → переписывание с тестами и запуском</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4: Competencies -->
+    <section class="slide">
+      <div class="slide-body">
+        <div class="slide-label">Компетенции</div>
+        <h2>Ключевые направления</h2>
+        <div class="grid-3">
+          <div class="card"><div class="card-icon">🔍</div><h3>Анализ</h3><p>As-is / to-be, приоритеты, измеримый эффект</p></div>
+          <div class="card"><div class="card-icon">⚙️</div><h3>Автоматизация</h3><p>Учёт, заявки, статусы, уведомления</p></div>
+          <div class="card"><div class="card-icon">💻</div><h3>Full-stack</h3><p>Backend, frontend, API, админ-панели</p></div>
+          <div class="card"><div class="card-icon">🔗</div><h3>Интеграции</h3><p>1С, CRM, Telegram, WhatsApp, iiko</p></div>
+          <div class="card"><div class="card-icon">📐</div><h3>Архитектура</h3><p>API-контракты, поэтапный запуск</p></div>
+          <div class="card"><div class="card-icon">🚀</div><h3>Деплой</h3><p>VPS, Docker, HTTPS, бэкапы</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: Process -->
+    <section class="slide">
+      <div class="slide-body">
+        <div class="slide-label">Процесс</div>
+        <h2>Как я работаю</h2>
+        <p class="slide-sub">Полный цикл — от боли бизнеса до работающей системы</p>
+        <div class="steps">
+          <span class="step">Диагностика</span>
+          <span class="step-arrow">→</span>
+          <span class="step">Анализ</span>
+          <span class="step-arrow">→</span>
+          <span class="step">Проектирование</span>
+          <span class="step-arrow">→</span>
+          <span class="step">Разработка</span>
+          <span class="step-arrow">→</span>
+          <span class="step">Тестирование</span>
+          <span class="step-arrow">→</span>
+          <span class="step">Запуск</span>
+          <span class="step-arrow">→</span>
+          <span class="step">Сопровождение</span>
+        </div>
+        <div class="principle-row" style="margin-top:28px">
+          <div class="principle-item"><strong>Сначала процесс, потом код</strong><span>Не автоматизирую хаос</span></div>
+          <div class="principle-item"><strong>Минимальное решение</strong><span>Эффект на каждом этапе</span></div>
+          <div class="principle-item"><strong>Уважаю 1С и CRM</strong><span>Не выбрасываю рабочий контур</span></div>
+          <div class="principle-item"><strong>Чёткая приёмка</strong><span>Scope и срок фиксируются заранее</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 6: Project 1 -->
+    <section class="slide">
+      <div class="slide-body">
+        <div class="slide-label">Кейс</div>
+        <h2>Система лояльности — сеть магазинов</h2>
+        <div class="project-block">
+          <h3>Q Premium · 4 торговые точки · 2025</h3>
+          <p class="role">Анализ → архитектура → разработка → договор → запуск</p>
+          <ul>
+            <li>Telegram Bot + Mini App для клиентов, экраны для кассиров и админки</li>
+            <li>Накопительные и подарочные баллы, подтверждение операций, сроки сгорания</li>
+            <li>Backend Django: учёт клиентов, бизнес-правила, роли и права</li>
+            <li>ТЗ 60+ разделов, договор подряда, смета, критерии приёмки</li>
+            <li>VPS, резервное копирование, HTTPS, webhook Telegram</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: Projects 2 -->
+    <section class="slide">
+      <div class="slide-body">
+        <div class="slide-label">Опыт</div>
+        <h2>Другие проекты</h2>
+        <div class="project-block">
+          <h3>МаБибип — собственный IT-продукт</h3>
+          <p class="role">Основатель · продукт · разработка · с 2022</p>
+          <ul>
+            <li>Автомобильный цифровой продукт — от идеи до реализации</li>
+            <li>Продуктовая концепция, архитектура, серверная и клиентская часть</li>
+          </ul>
+        </div>
+        <div class="project-block">
+          <h3>IT-практика: автоматизация под ключ</h3>
+          <p class="role">Технический предприниматель · с 2021</p>
+          <ul>
+            <li>Внутренние системы учёта, панели, клиентские кабинеты</li>
+            <li>Интеграции 1С, CRM, мессенджеры, кассовый контур</li>
+            <li>IoT: QR-доступ, ESP32, связка «устройство → сервер → операция»</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 8: Tech stack -->
+    <section class="slide">
+      <div class="slide-body">
+        <div class="slide-label">Технологии</div>
+        <h2>Технический стек</h2>
+        <div class="grid-2">
+          <div class="card"><h3>Backend</h3><p>Python, Django, REST API, бизнес-логика, авторизация, webhook</p></div>
+          <div class="card"><h3>Frontend</h3><p>HTML/CSS/JS, Vue.js, адаптивные интерфейсы, админ-панели</p></div>
+          <div class="card"><h3>Базы данных</h3><p>PostgreSQL, SQLite, миграции, целостность, бэкапы</p></div>
+          <div class="card"><h3>Инфраструктура</h3><p>Linux, VPS, Docker, Nginx, HTTPS, деплой, мониторинг</p></div>
+        </div>
+        <div class="tech-row">
+          <span class="tech-tag">Python</span>
+          <span class="tech-tag">Django</span>
+          <span class="tech-tag">Vue.js</span>
+          <span class="tech-tag">PostgreSQL</span>
+          <span class="tech-tag">Telegram Bot</span>
+          <span class="tech-tag">Mini App</span>
+          <span class="tech-tag">1С</span>
+          <span class="tech-tag">Docker</span>
+          <span class="tech-tag">Git</span>
+          <span class="tech-tag">iiko</span>
+          <span class="tech-tag">ESP32/IoT</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 9: Integrations -->
+    <section class="slide">
+      <div class="slide-body">
+        <div class="slide-label">Интеграции</div>
+        <h2>Связываю ваши системы</h2>
+        <p class="slide-sub" style="margin-bottom:20px">Каналы — не цель. Цель — управляемый поток операций.</p>
+        <div class="grid-3">
+          <div class="card"><div class="card-icon">📊</div><h3>1С</h3><p>Обмен данными, учёт, синхронизация</p></div>
+          <div class="card"><div class="card-icon">✈</div><h3>Telegram</h3><p>Боты, Mini App, уведомления, webhook</p></div>
+          <div class="card"><div class="card-icon">💬</div><h3>WhatsApp</h3><p>Коммуникация с клиентами и персоналом</p></div>
+          <div class="card"><div class="card-icon">🤝</div><h3>CRM</h3><p>Клиенты, сделки, статусы, автоматизация</p></div>
+          <div class="card"><div class="card-icon">🍽</div><h3>iiko</h3><p>HoReCa, кассовый и складской контур</p></div>
+          <div class="card"><div class="card-icon">📡</div><h3>IoT</h3><p>QR-доступ, ESP32, устройства → сервер</p></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 10: Contact -->
+    <section class="slide">
+      <div class="slide-body">
+        <div class="slide-label">Контакты</div>
+        <h2>Обсудим ваш проект?</h2>
+        <p class="cta-text">Напишите — разберём задачу и предложу решение под ваш бизнес</p>
+        <div class="contact-grid">
+          <a href="mailto:alihanskaev@gmail.com" class="contact-card">
+            <span class="icon">✉</span>
+            <span>alihanskaev@gmail.com</span>
+          </a>
+          <a href="tel:+79187020987" class="contact-card">
+            <span class="icon">📞</span>
+            <span>+7 918 702-09-87</span>
+          </a>
+          <a href="https://t.me/A_7l_i" target="_blank" rel="noopener" class="contact-card">
+            <span class="icon">✈</span>
+            <span>Telegram @A_7l_i</span>
+          </a>
+          <a href="https://wa.me/79187020987" target="_blank" rel="noopener" class="contact-card">
+            <span class="icon">💬</span>
+            <span>WhatsApp</span>
+          </a>
+        </div>
+        <div class="title-meta" style="margin-top:28px;justify-content:center">
+          <span class="meta-pill">Русский</span>
+          <span class="meta-pill">Осетинский</span>
+          <span class="meta-pill">Английский</span>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <nav class="controls" aria-label="Навигация по слайдам">
+    <button class="ctrl-btn" id="prev" aria-label="Предыдущий слайд">←</button>
+    <span class="slide-counter" id="counter">1 / 10</span>
+    <button class="ctrl-btn" id="next" aria-label="Следующий слайд">→</button>
+  </nav>
+
+  <script src="js/presentation.js"></script>
+</body>
+</html>
