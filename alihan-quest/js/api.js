@@ -63,15 +63,42 @@ function getHeaders() {
   return h;
 }
 
+function normalizeProfile(data) {
+  const src = data && typeof data === 'object' ? data : {};
+  return {
+    ...DEFAULT_PROFILE,
+    ...src,
+    kpi: { ...DEFAULT_PROFILE.kpi, ...(src.kpi || {}) },
+    stats_xp: { ...DEFAULT_PROFILE.stats_xp, ...(src.stats_xp || {}) },
+    season: src.season ?? DEFAULT_PROFILE.season,
+  };
+}
+
+function normalizeQuestPack(data) {
+  const src = data && typeof data === 'object' ? data : {};
+  return {
+    date: src.date || new Date().toISOString().slice(0, 10),
+    main_mission: src.main_mission || '',
+    quests: Array.isArray(src.quests) ? src.quests : [],
+  };
+}
+
 async function apiFetch(path, options = {}) {
   const base = window.QUEST_CONFIG?.API_BASE || '';
   if (!base) throw new Error('offline');
-  const res = await fetch(`${base.replace(/\/$/, '')}/api/v1${path}`, {
-    ...options,
-    headers: { ...getHeaders(), ...options.headers },
-  });
-  if (!res.ok) throw new Error(`API ${res.status}`);
-  return res.json();
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 12000);
+  try {
+    const res = await fetch(`${base.replace(/\/$/, '')}/api/v1${path}`, {
+      ...options,
+      signal: controller.signal,
+      headers: { ...getHeaders(), ...options.headers },
+    });
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    return res.json();
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 function xpForNextLevel(level) {
@@ -100,19 +127,19 @@ function recalcLevel(profile) {
 window.QuestAPI = {
   async getProfile() {
     try {
-      return await apiFetch('/me/');
+      return normalizeProfile(await apiFetch('/me/'));
     } catch {
       const local = loadLocal();
-      return local.profile || { ...DEFAULT_PROFILE };
+      return normalizeProfile(local.profile || DEFAULT_PROFILE);
     }
   },
 
   async getTodayQuests() {
     try {
-      return await apiFetch('/quests/today/');
+      return normalizeQuestPack(await apiFetch('/quests/today/'));
     } catch {
       const local = loadLocal();
-      return local.quests || DEMO_QUESTS;
+      return normalizeQuestPack(local.quests || DEMO_QUESTS);
     }
   },
 
@@ -137,7 +164,11 @@ window.QuestAPI = {
           });
         });
       });
-      local.quests = { date: new Date().toISOString().slice(0,10), main_mission: payload.main_mission || '', quests };
+      local.quests = normalizeQuestPack({
+        date: new Date().toISOString().slice(0, 10),
+        main_mission: payload.main_mission || '',
+        quests,
+      });
       saveLocal(local);
       return local.quests;
     }
@@ -150,8 +181,8 @@ window.QuestAPI = {
       });
     } catch {
       const local = loadLocal();
-      const profile = local.profile || { ...DEFAULT_PROFILE };
-      const pack = local.quests || DEMO_QUESTS;
+      const profile = normalizeProfile(local.profile || DEFAULT_PROFILE);
+      const pack = normalizeQuestPack(local.quests || DEMO_QUESTS);
       const quest = pack.quests.find((q) => q.id === questId);
       if (!quest || quest.status !== 'pending') return { error: 'already_processed' };
       quest.status = 'done';
