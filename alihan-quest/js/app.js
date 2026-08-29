@@ -11,7 +11,7 @@ createApp({
     const tab = ref('home');
     const profile = ref(QuestAPI.cachedProfile());
     const questPack = ref(QuestAPI.cachedQuests());
-    const booting = ref(true);
+    const booting = ref(false);
     const apiOnline = ref(false);
     const toast = ref('');
     const showReflect = ref(false);
@@ -126,9 +126,7 @@ createApp({
       }
       try {
         await refresh();
-      } finally {
-        booting.value = false;
-      }
+      } catch { /* keep cached data */ }
     });
 
     return {
@@ -143,11 +141,11 @@ createApp({
 
     <div v-if="booting" class="screen boot-screen"><p class="boot-text">Загрузка...</p></div>
 
-    <div v-if="!booting && !apiOnline" class="offline-banner">
-      📡 Офлайн-режим · данные на телефоне. Запусти cloudflared и обнови URL backend.
+    <div v-if="!apiOnline" class="offline-banner">
+      📡 Офлайн · данные с телефона. Если backend запущен — перезапусти Django (CORS).
     </div>
 
-    <div v-show="!booting && tab==='home'" class="screen tab-screen">
+    <div v-show="tab==='home'" class="screen tab-screen">
         <div class="hero-card">
           <div class="hero-name">{{ profile.display_name }}</div>
           <div class="hero-level">LEVEL {{ profile.level }}</div>
@@ -193,7 +191,7 @@ createApp({
         </div>
       </div>
 
-    <div v-show="!booting && tab==='quests'" class="screen tab-screen">
+    <div v-show="tab==='quests'" class="screen tab-screen">
         <div class="section-head">⚔️ Daily Quest</div>
 
         <div v-if="!questPack.quests.length" class="empty-state">
@@ -224,7 +222,7 @@ createApp({
         </template>
       </div>
 
-    <div v-show="!booting && tab==='character'" class="screen tab-screen">
+    <div v-show="tab==='character'" class="screen tab-screen">
         <div class="section-head">📊 8 характеристик</div>
         <div class="stat-grid">
           <div v-for="(xp, key) in profile.stats_xp" :key="key" class="stat-card">
@@ -238,7 +236,7 @@ createApp({
         </p>
       </div>
 
-    <div v-show="!booting && tab==='goals'" class="screen tab-screen">
+    <div v-show="tab==='goals'" class="screen tab-screen">
         <div class="section-head">🎯 Цели</div>
         <div class="goal-block">
           <h4>🏠 Дом родителям</h4>
@@ -287,7 +285,7 @@ createApp({
     </div>
 
     <!-- Bottom nav -->
-    <nav v-if="!booting" class="bottom-nav">
+    <nav class="bottom-nav">
       <button type="button" class="nav-item" :class="{active: tab==='home'}" @click="switchTab('home')"><span class="ico">🏠</span>HOME</button>
       <button type="button" class="nav-item" :class="{active: tab==='quests'}" @click="switchTab('quests')"><span class="ico">⚔️</span>QUESTS</button>
       <button type="button" class="nav-item" :class="{active: tab==='character'}" @click="switchTab('character')"><span class="ico">📊</span>STATS</button>
