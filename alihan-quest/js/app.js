@@ -90,6 +90,7 @@ createApp({
     const showReflect = ref(false);
     const showImport = ref(false);
     const importReplace = ref(false);
+    const swipe = ref({ id: null, startX: 0, deltaX: 0 });
     const showKpiEdit = ref(false);
     const showAddQuest = ref(false);
     const showEditQuest = ref(false);
@@ -299,6 +300,38 @@ createApp({
       }
     }
 
+    async function deferQuestToTomorrow(q, event) {
+      if (event) event.stopPropagation();
+      if (!q?.id || q.status !== 'pending') return;
+      const pack = await QuestAPI.deferQuest(q.id);
+      if (pack) questPack.value = pack;
+      showToast('→ Завтра ✓');
+    }
+
+    function onQuestTouchStart(q, e) {
+      if (q.status !== 'pending') return;
+      swipe.value = { id: q.id, startX: e.touches[0].clientX, deltaX: 0 };
+    }
+
+    function onQuestTouchMove(q, e) {
+      if (swipe.value.id !== q.id) return;
+      const delta = e.touches[0].clientX - swipe.value.startX;
+      if (delta > 0) swipe.value = { ...swipe.value, deltaX: delta };
+    }
+
+    async function onQuestTouchEnd(q) {
+      if (swipe.value.id !== q.id) return;
+      const { deltaX } = swipe.value;
+      swipe.value = { id: null, startX: 0, deltaX: 0 };
+      if (deltaX >= 80) await deferQuestToTomorrow(q);
+    }
+
+    function questSwipeStyle(q) {
+      if (swipe.value.id !== q.id || !swipe.value.deltaX) return null;
+      const dx = Math.min(swipe.value.deltaX, 100);
+      return { transform: `translateX(${dx}px)` };
+    }
+
     function openImport(replace = false) {
       importReplace.value = replace;
       showImport.value = true;
@@ -462,7 +495,7 @@ createApp({
     });
 
     return {
-      tab, profile, displayProfile, questPack, apiOnline, toast,
+      tab, profile, displayProfile, questPack, apiOnline, toast, swipe,
       showReflect, showImport, importReplace, showKpiEdit, showAddQuest, showEditQuest,
       showGoalEdit, showGoalAdd, showQuestDetail,
       activeQuest, detailQuest, importJson, reflection,
@@ -474,7 +507,8 @@ createApp({
       QuestAPI,
       fmtMoney, fmtNum, fmtDueTime, pct, showToast, switchTab,
       openKpiEdit, saveKpi,
-      openAddQuest, openEditQuest, saveNewQuest, saveEditedQuest, removeQuest,
+      openAddQuest, openEditQuest, saveNewQuest, saveEditedQuest, removeQuest, deferQuestToTomorrow,
+      onQuestTouchStart, onQuestTouchMove, onQuestTouchEnd, questSwipeStyle,
       openQuest, submitQuest, openImport, openReplaceImport, doImport, loadSampleImport,
       openGoalEdit, openGoalAdd, saveSavings, saveNewGoal,
       loadCalendar, calDayClass, selectCalendarDay, loadJournalDay,
@@ -586,13 +620,18 @@ createApp({
             <div v-if="questPack.main_mission" class="quest-mission">
               🔥 <strong>Главная миссия:</strong> {{ questPack.main_mission }}
             </div>
-            <p class="quest-meta">{{ pendingCount }} активных · {{ questPack.date }}</p>
+            <p class="quest-meta">{{ pendingCount }} активных · {{ questPack.date }} · смахни вправо → завтра</p>
 
             <template v-for="(quests, statKey) in questsByStat" :key="statKey">
               <div class="quest-group-title">{{ STAT_LABELS[statKey] || statKey }}</div>
               <div v-for="q in quests" :key="q.id"
-                   class="quest-item" :class="{done: q.status==='done', failed: q.status==='failed'}"
+                   class="quest-item quest-swipe-wrap" :class="{done: q.status==='done', failed: q.status==='failed', swiping: swipe.id===q.id}"
+                   :style="questSwipeStyle(q)"
+                   @touchstart.passive="onQuestTouchStart(q, $event)"
+                   @touchmove.passive="onQuestTouchMove(q, $event)"
+                   @touchend="onQuestTouchEnd(q)"
                    @click="openQuest(q)">
+                <div v-if="q.status==='pending'" class="quest-swipe-hint">→ завтра</div>
                 <div class="quest-check">{{ q.status==='done' ? '✓' : '' }}</div>
                 <div class="quest-body">
                   <div class="quest-title">{{ q.title }}</div>

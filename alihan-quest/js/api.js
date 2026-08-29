@@ -283,6 +283,21 @@ window.QuestAPI = {
     }
   },
 
+  async deferQuest(id) {
+    try {
+      await apiFetch(`/quests/${id}/defer/`, { method: 'POST', body: '{}' });
+      return (await this.getTodayQuests()).data;
+    } catch {
+      const local = loadLocal();
+      const pack = normalizeQuestPack(local.quests || DEMO_QUESTS);
+      const q = pack.quests.find((x) => x.id === id);
+      if (q) pack.quests = pack.quests.filter((x) => x.id !== id);
+      local.quests = pack;
+      saveLocal(local);
+      return pack;
+    }
+  },
+
   async deleteQuest(id) {
     try {
       await apiFetch(`/quests/${id}/`, { method: 'DELETE' });
