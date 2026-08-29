@@ -83,6 +83,20 @@ body {
   z-index: 2;
 }
 
+.sync-banner {
+  flex-shrink: 0;
+  margin: 8px 16px 0;
+  padding: 8px 14px;
+  background: rgba(46, 204, 113, 0.1);
+  border: 1px solid rgba(46, 204, 113, 0.35);
+  border-radius: 12px;
+  color: #7dcea0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  position: relative;
+  z-index: 2;
+}
+
 .quest-meta { font-size: 0.85rem; color: var(--muted); margin-bottom: 8px; }
 .quest-refresh { margin-top: 12px; }
 .rule-text { margin-top: 16px; font-size: 0.85rem; color: var(--muted); line-height: 1.5; }

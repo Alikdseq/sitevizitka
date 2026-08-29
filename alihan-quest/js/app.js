@@ -91,6 +91,7 @@ createApp({
     const showImport = ref(false);
     const importReplace = ref(false);
     const swipe = ref({ id: null, startX: 0, deltaX: 0 });
+    const syncInfo = ref(null);
     const showKpiEdit = ref(false);
     const showAddQuest = ref(false);
     const showEditQuest = ref(false);
@@ -192,10 +193,11 @@ createApp({
         QuestAPI.getTodayQuests(),
       ]);
       apiOnline.value = Boolean(p?.online && q?.online);
+      syncInfo.value = q?.sync || p?.data?.sync || q?.data?.sync || null;
       if (p?.online && p.data) profile.value = ensureProfile(p.data);
       else profile.value = ensureProfile(QuestAPI.cachedProfile());
       if (q?.online && q.data) questPack.value = q.data;
-      else questPack.value = QuestAPI.cachedQuests();
+      else questPack.value = { date: new Date().toISOString().slice(0, 10), main_mission: '', quests: [] };
     }
 
     function openKpiEdit() {
@@ -521,7 +523,7 @@ createApp({
     });
 
     return {
-      tab, profile, displayProfile, questPack, apiOnline, toast, swipe,
+      tab, profile, displayProfile, questPack, apiOnline, toast, swipe, syncInfo,
       showReflect, showImport, importReplace, showKpiEdit, showAddQuest, showEditQuest,
       showGoalEdit, showGoalAdd, showQuestDetail,
       activeQuest, detailQuest, importJson, reflection,
@@ -548,7 +550,10 @@ createApp({
       <div v-if="toast" class="toast">{{ toast }}</div>
 
       <div v-if="!apiOnline" class="offline-banner">
-        📡 Нет связи с сервером — показан кэш. Задачи из бота не видны, пока backend недоступен. Проверь cloudflared + Django.
+        📡 Нет связи с сервером — задачи не загружены. Проверь Django + cloudflared, обнови URL в config.js.
+      </div>
+      <div v-else-if="syncInfo" class="sync-banner">
+        🗄 БД · player #{{ syncInfo.player_id }} · {{ syncInfo.quest_count }} задач ({{ syncInfo.manual_count || 0 }} вручную) · бот видит то же
       </div>
 
       <main class="main-content">

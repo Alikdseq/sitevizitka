@@ -1,4 +1,15 @@
-const STORAGE_KEY = 'alihan_quest_local';
+const STORAGE_KEY = 'alihan_quest_v3';
+const SERVER_ID_MAX = 100000000; // id из БД — маленькие числа; локальный фейк — timestamp
+
+function isServerQuestId(id) {
+  const n = Number(id);
+  return Number.isInteger(n) && n > 0 && n < SERVER_ID_MAX;
+}
+
+function filterServerQuests(quests) {
+  if (!Array.isArray(quests)) return [];
+  return quests.filter((q) => isServerQuestId(q?.id));
+}
 
 const STAT_KEYS = ['capital', 'entrepreneur', 'mastery', 'mabibip', 'media', 'form', 'network', 'discipline'];
 
@@ -106,20 +117,35 @@ const DEMO_QUESTS = {
 };
 
 function loadLocal() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
-  catch { return {}; }
+  try {
+    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    const ver = window.QUEST_CONFIG?.CACHE_VERSION || 1;
+    if (raw._cacheVersion !== ver) return { _cacheVersion: ver };
+    return raw;
+  } catch { return {}; }
 }
 
 function saveLocal(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  const ver = window.QUEST_CONFIG?.CACHE_VERSION || 1;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...data, _cacheVersion: ver }));
+  // Удалить старый кэш с фейковыми задачами
+  try { localStorage.removeItem('alihan_quest_local'); } catch { /* ignore */ }
 }
 
 function getHeaders() {
   const h = { 'Content-Type': 'application/json', Accept: 'application/json' };
   const tg = window.Telegram?.WebApp?.initData;
   if (tg) h['X-Telegram-Init-Data'] = tg;
-  else h['X-Demo-Token'] = window.QUEST_CONFIG?.DEMO_TOKEN || 'demo-alihan-quest';
+  // Всегда demo-token — fallback на тот же профиль в БД (MVP single-user)
+  h['X-Demo-Token'] = window.QUEST_CONFIG?.DEMO_TOKEN || 'demo-alihan-quest';
   return h;
+}
+
+function getApiBase() {
+  // config.js — источник правды; localStorage только если явно задан вручную
+  const fromConfig = (window.QUEST_CONFIG?.API_BASE || '').replace(/\/$/, '');
+  if (fromConfig) return fromConfig;
+  return (localStorage.getItem('quest_api_base') || '').replace(/\/$/, '');
 }
 
 function normalizeProfile(data) {
@@ -146,14 +172,9 @@ function normalizeQuestPack(data) {
   return {
     date: src.date || new Date().toISOString().slice(0, 10),
     main_mission: src.main_mission || '',
-    quests: Array.isArray(src.quests) ? src.quests : [],
+    quests: filterServerQuests(src.quests),
+    sync: src.sync || null,
   };
-}
-
-function getApiBase() {
-  return (localStorage.getItem('quest_api_base')
-    || window.QUEST_CONFIG?.API_BASE
-    || '').replace(/\/$/, '');
 }
 
 async function parseJsonResponse(res) {
@@ -188,7 +209,9 @@ function cachedProfile() {
 }
 
 function cachedQuests() {
-  return normalizeQuestPack(loadLocal().quests || DEMO_QUESTS);
+  const local = loadLocal();
+  if (local.quests) return normalizeQuestPack(local.quests);
+  return normalizeQuestPack(DEMO_QUESTS);
 }
 
 window.QuestAPI = {
@@ -227,13 +250,15 @@ window.QuestAPI = {
 
   async getTodayQuests() {
     try {
-      const data = normalizeQuestPack(await apiFetch('/quests/today/'));
+      const raw = await apiFetch('/quests/today/');
+      const data = normalizeQuestPack(raw);
       const local = loadLocal();
       local.quests = data;
+      local.lastSync = Date.now();
       saveLocal(local);
-      return { data, online: true };
-    } catch {
-      return { data: cachedQuests(), online: false };
+      return { data, online: true, sync: raw.sync || null };
+    } catch (err) {
+      return { data: { date: new Date().toISOString().slice(0, 10), main_mission: '', quests: [], sync: null }, online: false, error: String(err) };
     }
   },
 
