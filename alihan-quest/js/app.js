@@ -67,7 +67,8 @@ function pickData(result, fallback) {
 }
 
 function ensureProfile(p) {
-  return p && typeof p === 'object' ? p : QuestAPI.cachedProfile();
+  if (!p || typeof p !== 'object') return QuestAPI.cachedProfile();
+  return QuestAPI.normalizeProfile(p);
 }
 
 function emptyReflection() {
@@ -88,6 +89,7 @@ createApp({
 
     const showReflect = ref(false);
     const showImport = ref(false);
+    const importReplace = ref(false);
     const showKpiEdit = ref(false);
     const showAddQuest = ref(false);
     const showEditQuest = ref(false);
@@ -101,7 +103,9 @@ createApp({
     const reflection = ref(emptyReflection());
 
     const kpiForm = ref({});
-    const questForm = ref({ title: '', stat_key: 'discipline', xp_reward: 30 });
+    const questForm = ref({ title: '', stat_key: 'discipline', xp_reward: 30, due_time: '' });
+
+    const displayProfile = computed(() => ensureProfile(profile.value));
     const goalForm = ref({ title: '', description: '', current_value: 0, target_value: 0 });
     const savingsForm = ref({ home_savings: 0, home_goal: 0, car_savings: 0, car_goal: 0 });
 
@@ -208,8 +212,24 @@ createApp({
       showToast('KPI сохранены ✓');
     }
 
+    function fmtDueTime(value) {
+      if (!value) return '';
+      return String(value).slice(0, 5);
+    }
+
+    function questPayloadFromForm() {
+      const payload = {
+        title: questForm.value.title.trim(),
+        stat_key: questForm.value.stat_key,
+        xp_reward: Number(questForm.value.xp_reward) || 30,
+      };
+      if (questForm.value.due_time) payload.due_time = questForm.value.due_time;
+      else payload.due_time = null;
+      return payload;
+    }
+
     function openAddQuest() {
-      questForm.value = { title: '', stat_key: 'discipline', xp_reward: 30 };
+      questForm.value = { title: '', stat_key: 'discipline', xp_reward: 30, due_time: '' };
       showAddQuest.value = true;
     }
 
@@ -219,6 +239,7 @@ createApp({
         title: q.title || '',
         stat_key: q.stat_key || 'discipline',
         xp_reward: Number(q.xp_reward) || 30,
+        due_time: q.due_time || '',
       };
       showEditQuest.value = true;
     }
@@ -228,11 +249,7 @@ createApp({
         showToast('Введите название');
         return;
       }
-      const pack = await QuestAPI.addQuest({
-        title: questForm.value.title.trim(),
-        stat_key: questForm.value.stat_key,
-        xp_reward: Number(questForm.value.xp_reward) || 30,
-      });
+      const pack = await QuestAPI.addQuest(questPayloadFromForm());
       if (pack) questPack.value = pack;
       showAddQuest.value = false;
       showToast('Квест добавлен ✓');
@@ -243,11 +260,7 @@ createApp({
         showToast('Введите название');
         return;
       }
-      const pack = await QuestAPI.updateQuest(activeQuest.value.id, {
-        title: questForm.value.title.trim(),
-        stat_key: questForm.value.stat_key,
-        xp_reward: Number(questForm.value.xp_reward) || 30,
-      });
+      const pack = await QuestAPI.updateQuest(activeQuest.value.id, questPayloadFromForm());
       if (pack) questPack.value = pack;
       showEditQuest.value = false;
       activeQuest.value = null;
@@ -286,15 +299,30 @@ createApp({
       }
     }
 
+    function openImport(replace = false) {
+      importReplace.value = replace;
+      showImport.value = true;
+    }
+
+    function openReplaceImport() {
+      if (!window.confirm(
+        'Заменить импортированные задачи на сегодня?\n\n'
+        + 'Ручные задачи и выполненные квесты сохранятся.'
+      )) return;
+      openImport(true);
+    }
+
     async function doImport() {
       try {
         const payload = JSON.parse(importJson.value);
-        const result = await QuestAPI.importQuests(payload);
+        const wasReplace = importReplace.value;
+        const result = await QuestAPI.importQuests(payload, wasReplace);
         const pack = pickData(result, QuestAPI.cachedQuests);
         if (pack) questPack.value = pack;
         showImport.value = false;
+        importReplace.value = false;
         importJson.value = '';
-        showToast('Квесты загружены ✓', 2000);
+        showToast(wasReplace ? 'Quest Pack заменён ✓' : 'Квесты добавлены ✓', 2000);
       } catch {
         showToast('Ошибка JSON', 2000);
       }
@@ -434,8 +462,8 @@ createApp({
     });
 
     return {
-      tab, profile, questPack, apiOnline, toast,
-      showReflect, showImport, showKpiEdit, showAddQuest, showEditQuest,
+      tab, profile, displayProfile, questPack, apiOnline, toast,
+      showReflect, showImport, importReplace, showKpiEdit, showAddQuest, showEditQuest,
       showGoalEdit, showGoalAdd, showQuestDetail,
       activeQuest, detailQuest, importJson, reflection,
       kpiForm, questForm, goalForm, savingsForm,
@@ -444,10 +472,10 @@ createApp({
       calendarCells, calendarTitle, detailReadOnly,
       STAT_LABELS, KPI_FIELDS, REFLECTION_FIELDS,
       QuestAPI,
-      fmtMoney, fmtNum, pct, showToast, switchTab,
+      fmtMoney, fmtNum, fmtDueTime, pct, showToast, switchTab,
       openKpiEdit, saveKpi,
       openAddQuest, openEditQuest, saveNewQuest, saveEditedQuest, removeQuest,
-      openQuest, submitQuest, doImport, loadSampleImport,
+      openQuest, submitQuest, openImport, openReplaceImport, doImport, loadSampleImport,
       openGoalEdit, openGoalAdd, saveSavings, saveNewGoal,
       loadCalendar, calDayClass, selectCalendarDay, loadJournalDay,
       openQuestDetail, prevMonth, nextMonth,
@@ -467,19 +495,20 @@ createApp({
         <!-- HOME -->
         <section v-if="tab==='home'" class="screen">
           <div class="hero-card">
-            <div class="hero-name">{{ profile.display_name }}</div>
-            <div class="hero-level">LEVEL {{ profile.level }}</div>
-            <div class="hero-title">«{{ profile.title }}»</div>
+            <div class="hero-name">{{ displayProfile.display_name }}</div>
+            <div class="hero-level">LEVEL {{ displayProfile.level }}</div>
+            <div class="hero-title">«{{ displayProfile.title }}»</div>
+            <div class="hero-level-hint">Среднее уровней 8 характеристик</div>
             <div class="xp-bar-wrap">
-              <div class="xp-label"><span>⭐ XP</span><span>{{ fmtNum(profile.xp_in_level) }} / {{ fmtNum(profile.xp_needed) }}</span></div>
+              <div class="xp-label"><span>⭐ XP</span><span>{{ fmtNum(displayProfile.xp_in_level) }} / {{ fmtNum(displayProfile.xp_needed) }}</span></div>
               <div class="xp-bar"><div class="xp-fill" :style="{width: xpPercent+'%'}"></div></div>
             </div>
-            <div class="streak">🔥 ACTION STREAK · {{ profile.action_streak }} дней</div>
+            <div class="streak">🔥 ACTION STREAK · {{ displayProfile.action_streak }} дней</div>
           </div>
 
-          <div v-if="profile.season" class="season-banner">
-            🏆 SEASON {{ String(profile.season.number).padStart(2,'0') }} — <strong>{{ profile.season.title }}</strong><br>
-            🐉 Босс: {{ profile.season.boss_name }}
+          <div v-if="displayProfile.season" class="season-banner">
+            🏆 SEASON {{ String(displayProfile.season.number).padStart(2,'0') }} — <strong>{{ displayProfile.season.title }}</strong><br>
+            🐉 Босс: {{ displayProfile.season.boss_name }}
           </div>
 
           <div class="section-head-row">
@@ -491,9 +520,9 @@ createApp({
             <div class="kpi">
               <div class="kpi-icon">💰</div>
               <div class="kpi-label">Капитал</div>
-              <div class="kpi-value">{{ fmtMoney(profile.kpi.capital_season) }}</div>
-              <div class="kpi-sub">цель {{ fmtMoney(profile.kpi.capital_goal) }}</div>
-              <div class="progress-mini"><div class="progress-mini-fill" :style="{width: pct(profile.kpi.capital_season, profile.kpi.capital_goal)+'%'}"></div></div>
+              <div class="kpi-value">{{ fmtMoney(displayProfile.kpi.capital_season) }}</div>
+              <div class="kpi-sub">цель {{ fmtMoney(displayProfile.kpi.capital_goal) }}</div>
+              <div class="progress-mini"><div class="progress-mini-fill" :style="{width: pct(displayProfile.kpi.capital_season, displayProfile.kpi.capital_goal)+'%'}"></div></div>
             </div>
             <div class="kpi">
               <div class="kpi-icon">🚀</div>
@@ -545,12 +574,12 @@ createApp({
           </div>
 
           <div class="quest-actions-row">
-            <button type="button" class="btn btn-secondary btn-sm" @click="showImport=true">📥 Импорт JSON</button>
+            <button type="button" class="btn btn-secondary btn-sm" @click="openImport(false)">📥 Импорт JSON</button>
           </div>
 
           <div v-if="!questPack.quests.length" class="empty-state">
             <p>⚔️ Задания на сегодня не созданы</p>
-            <button type="button" class="btn btn-primary" @click="showImport=true">Импортировать Quest Pack →</button>
+            <button type="button" class="btn btn-primary" @click="openImport(false)">Импортировать Quest Pack →</button>
           </div>
 
           <template v-else>
@@ -567,7 +596,7 @@ createApp({
                 <div class="quest-check">{{ q.status==='done' ? '✓' : '' }}</div>
                 <div class="quest-body">
                   <div class="quest-title">{{ q.title }}</div>
-                  <div class="quest-xp">+{{ q.xp_reward }} XP · {{ STAT_LABELS[q.stat_key] || q.stat_key }}</div>
+                  <div class="quest-xp">+{{ q.xp_reward }} XP · {{ STAT_LABELS[q.stat_key] || q.stat_key }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
                 </div>
                 <div v-if="q.status==='pending'" class="quest-actions" @click.stop>
                   <button type="button" class="edit-btn edit-btn-sm" @click="openEditQuest(q)">✏️</button>
@@ -576,7 +605,7 @@ createApp({
               </div>
             </template>
 
-            <button type="button" class="btn btn-secondary quest-refresh" @click="showImport=true">↻ Обновить Quest Pack</button>
+            <button type="button" class="btn btn-secondary quest-refresh" @click="openReplaceImport">↻ Заменить Quest Pack</button>
           </template>
         </section>
 
@@ -587,15 +616,18 @@ createApp({
             <div v-for="key in statKeys" :key="key" class="stat-card">
               <div class="stat-card-head">
                 <div class="icon">{{ (STAT_LABELS[key] || '⭐').split(' ')[0] }}</div>
-                <span class="stat-level">LEVEL {{ profile.stats_levels?.[key] ?? 0 }}</span>
+                <span class="stat-level">LEVEL {{ displayProfile.stats_levels?.[key] ?? 0 }}</span>
               </div>
               <div class="name">{{ (STAT_LABELS[key] || key).replace(/^\\S+\\s/, '') }}</div>
-              <div class="xp">{{ fmtNum(profile.stats_xp?.[key] ?? 0) }} XP</div>
+              <div class="xp">{{ fmtNum(displayProfile.stats_xp?.[key] ?? 0) }} XP</div>
               <div class="stat-rule">{{ QuestAPI.STAT_LEVEL_RULES[key] || '' }}</div>
             </div>
           </div>
           <p class="rule-text">
-            <strong>Правило:</strong> планирование не даёт XP. Действие даёт XP.
+            <strong>Уровень героя</strong> = среднее уровней 8 характеристик (округление). Сейчас: {{ displayProfile.level }}.
+          </p>
+          <p class="rule-text">
+            <strong>XP квестов</strong> — за выполнение задач. Планирование не даёт XP.
           </p>
         </section>
 
@@ -724,8 +756,13 @@ createApp({
       <!-- Import -->
       <div v-if="showImport" class="modal-overlay" @click.self="showImport=false">
         <div class="modal">
-          <h3>📥 Импорт Daily Quest Pack</h3>
-          <p class="modal-sub">Вставь JSON от GPT или нажми «Пример»</p>
+          <h3>{{ importReplace ? '↻ Заменить Quest Pack' : '📥 Импорт Daily Quest Pack' }}</h3>
+          <p class="modal-sub" v-if="importReplace">
+            Импортированные задачи на сегодня будут заменены. Ручные задачи останутся.
+          </p>
+          <p class="modal-sub" v-else>
+            Новые задачи добавятся к существующим (дубликаты по названию пропускаются).
+          </p>
           <textarea class="import-area" v-model="importJson" placeholder='{"main_mission":"...","blocks":[...]}'></textarea>
           <div class="import-actions">
             <button type="button" class="btn btn-secondary btn-sm" @click="loadSampleImport">Пример</button>
@@ -769,6 +806,11 @@ createApp({
             <label>XP награда</label>
             <input v-model.number="questForm.xp_reward" type="number" min="1">
           </div>
+          <div class="field">
+            <label>Дедлайн (необязательно)</label>
+            <input v-model="questForm.due_time" type="time">
+            <p class="field-hint">Пусто = бессрочно. За 1 ч до дедлайна бот напомнит в Telegram.</p>
+          </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="showAddQuest=false">Отмена</button>
             <button type="button" class="btn btn-primary" @click="saveNewQuest">Добавить</button>
@@ -793,6 +835,11 @@ createApp({
           <div class="field">
             <label>XP награда</label>
             <input v-model.number="questForm.xp_reward" type="number" min="1">
+          </div>
+          <div class="field">
+            <label>Дедлайн (необязательно)</label>
+            <input v-model="questForm.due_time" type="time">
+            <p class="field-hint">Очистите поле, чтобы сделать задачу бессрочной.</p>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="showEditQuest=false">Отмена</button>

@@ -28,8 +28,33 @@ function computeStatLevels(kpi) {
 }
 
 function computeHeroLevel(statLevels) {
-  const sum = Object.values(statLevels || {}).reduce((a, b) => a + Number(b), 0);
-  return Math.max(1, sum);
+  const vals = Object.values(statLevels || {});
+  if (!vals.length) return 1;
+  const sum = vals.reduce((a, b) => a + Number(b), 0);
+  if (sum === 0) return 1;
+  return Math.max(1, Math.round(sum / vals.length));
+}
+
+const LEVEL_TITLES = [
+  [1, 4, 'ПЕРВЫЙ ШАГ'],
+  [5, 9, 'ЧЕЛОВЕК ДЕЙСТВИЯ'],
+  [10, 14, 'СТРОИТЕЛЬ'],
+  [15, 19, 'СТРОИТЕЛЬ БУДУЩЕГО'],
+  [20, 24, 'ИГРОК БИЗНЕСА'],
+  [25, 29, 'СОЗДАТЕЛЬ'],
+  [30, 34, 'РУКОВОДИТЕЛЬ'],
+  [35, 39, 'СТРАТЕГ'],
+  [40, 44, 'БИЗНЕСМЕН'],
+  [45, 49, 'МАСТЕР ИГРЫ'],
+  [50, 999, 'АРХИТЕКТОР СОБСТВЕННОЙ ЖИЗНИ'],
+];
+
+function titleForLevel(level) {
+  const lv = Number(level) || 1;
+  for (const [low, high, title] of LEVEL_TITLES) {
+    if (lv >= low && lv <= high) return title;
+  }
+  return 'АЛИХАН';
 }
 
 const DEFAULT_KPI = {
@@ -100,12 +125,14 @@ function getHeaders() {
 function normalizeProfile(data) {
   const src = data && typeof data === 'object' ? data : {};
   const kpi = { ...DEFAULT_KPI, ...(src.kpi || {}) };
-  const stats_levels = src.stats_levels || computeStatLevels(kpi);
-  const level = src.level ?? computeHeroLevel(stats_levels);
+  const stats_levels = computeStatLevels(kpi);
+  const level = computeHeroLevel(stats_levels);
+  const title = titleForLevel(level);
   return {
     ...DEFAULT_PROFILE,
     ...src,
     level,
+    title,
     kpi,
     stats_xp: { ...DEFAULT_PROFILE.stats_xp, ...(src.stats_xp || {}) },
     stats_levels,
@@ -170,6 +197,8 @@ window.QuestAPI = {
   cachedQuests,
   computeStatLevels,
   computeHeroLevel,
+  normalizeProfile,
+  titleForLevel,
 
   async getProfile() {
     try {
@@ -214,9 +243,10 @@ window.QuestAPI = {
     }
   },
 
-  async importQuests(payload) {
+  async importQuests(payload, replace = false) {
     try {
-      await apiFetch('/quests/import/', { method: 'POST', body: JSON.stringify(payload) });
+      const body = { ...(payload || {}), replace: Boolean(replace) };
+      await apiFetch('/quests/import/', { method: 'POST', body: JSON.stringify(body) });
       return this.getTodayQuests();
     } catch {
       return { data: cachedQuests(), online: false };
