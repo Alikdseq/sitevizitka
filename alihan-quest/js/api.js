@@ -1,54 +1,88 @@
 const STORAGE_KEY = 'alihan_quest_local';
 
-const DEFAULT_PROFILE = {
-  display_name: 'АЛИХАН',
-  level: 17,
-  title: 'СТРОИТЕЛЬ БУДУЩЕГО',
-  total_xp: 12450,
-  xp_in_level: 12450,
-  xp_needed: 15300,
-  action_streak: 7,
-  kpi: {
-    capital_season: 215000,
-    capital_goal: 1000000,
-    mabibip_users: 520,
-    mabibip_goal: 1200,
-    mabibip_masters: 175,
-    mabibip_masters_goal: 300,
-    instagram_followers: 5198,
-    instagram_goal: 10000,
-    business_projects: 4,
-    weight_kg: 80,
-    weight_goal_kg: 88,
-    home_savings: 0,
-    home_goal: 0,
-    car_savings: 0,
-    car_goal: 0,
-  },
-  stats_xp: {
-    capital: 3200, entrepreneur: 2100, mastery: 1800, mabibip: 1500,
-    media: 900, form: 600, network: 1100, discipline: 1250,
-  },
-  season: { number: 1, title: 'ВОЗВРАЩЕНИЕ', boss_name: 'ФИНАНСОВАЯ НЕСТАБИЛЬНОСТЬ', boss_defeated: false },
+const STAT_KEYS = ['capital', 'entrepreneur', 'mastery', 'mabibip', 'media', 'form', 'network', 'discipline'];
+
+const STAT_LEVEL_RULES = {
+  capital: '₽10 000 = 1 ур.',
+  media: '1 000 подписчиков = 1 ур.',
+  entrepreneur: '5 проектов = 1 ур.',
+  mastery: '1 навык = 1 ур.',
+  mabibip: '100 пользователей = 1 ур.',
+  form: '1 разминка = +1 ур.',
+  network: '10 контактов = 1 ур.',
+  discipline: '7 дней подряд все задачи = 1 ур.',
 };
+
+function computeStatLevels(kpi) {
+  const k = kpi || {};
+  return {
+    capital: Math.floor(Number(k.capital_season || 0) / 10000),
+    media: Math.floor(Number(k.instagram_followers || 0) / 1000),
+    entrepreneur: Math.floor(Number(k.business_projects || 0) / 5),
+    mastery: Number(k.skills_count || 0),
+    mabibip: Math.floor(Number(k.mabibip_users || 0) / 100),
+    form: Number(k.form_sessions || 0),
+    network: Math.floor(Number(k.contacts_count || 0) / 10),
+    discipline: Number(k.discipline_perfect_weeks || 0),
+  };
+}
+
+function computeHeroLevel(statLevels) {
+  const sum = Object.values(statLevels || {}).reduce((a, b) => a + Number(b), 0);
+  return Math.max(1, sum);
+}
+
+const DEFAULT_KPI = {
+  capital_season: 215000,
+  capital_goal: 1000000,
+  mabibip_users: 520,
+  mabibip_goal: 1200,
+  mabibip_masters: 175,
+  mabibip_masters_goal: 300,
+  instagram_followers: 5198,
+  instagram_goal: 10000,
+  business_projects: 10,
+  weight_kg: 80,
+  weight_goal_kg: 88,
+  home_savings: 0,
+  home_goal: 0,
+  car_savings: 0,
+  car_goal: 0,
+  skills_count: 12,
+  contacts_count: 0,
+  form_sessions: 0,
+  discipline_perfect_weeks: 0,
+  discipline_streak_days: 0,
+};
+
+const DEFAULT_PROFILE = (() => {
+  const stats_levels = computeStatLevels(DEFAULT_KPI);
+  const level = computeHeroLevel(stats_levels);
+  return {
+    display_name: 'АЛИХАН',
+    level,
+    title: 'ПЕРВЫЙ ШАГ',
+    total_xp: 0,
+    xp_in_level: 0,
+    xp_needed: 1000,
+    action_streak: 0,
+    kpi: { ...DEFAULT_KPI },
+    stats_xp: Object.fromEntries(STAT_KEYS.map((k) => [k, 0])),
+    stats_levels,
+    goals: [],
+    season: { number: 1, title: 'ВОЗВРАЩЕНИЕ', boss_name: 'ФИНАНСОВАЯ НЕСТАБИЛЬНОСТЬ', boss_defeated: false },
+  };
+})();
 
 const DEMO_QUESTS = {
   date: new Date().toISOString().slice(0, 10),
   main_mission: 'Получить новую бизнес-возможность',
-  quests: [
-    { id: 1, stat_key: 'capital', stat_label: '💰 Капитал', title: 'Связаться с клиентом по оплате', xp_reward: 40, status: 'pending' },
-    { id: 2, stat_key: 'capital', stat_label: '💰 Капитал', title: 'Получить конкретную дату оплаты', xp_reward: 80, status: 'pending' },
-    { id: 3, stat_key: 'entrepreneur', stat_label: '💼 Предприниматель', title: 'Позвонить 4 предпринимателям', xp_reward: 80, status: 'pending' },
-    { id: 4, stat_key: 'mabibip', stat_label: '🚀 МаБибип', title: 'Исправить критическую функцию', xp_reward: 100, status: 'pending' },
-    { id: 5, stat_key: 'media', stat_label: '🎥 Медийность', title: 'Опубликовать Reels', xp_reward: 60, status: 'pending' },
-    { id: 6, stat_key: 'discipline', stat_label: '⚡ Дисциплина', title: 'Подъём до 07:00', xp_reward: 30, status: 'pending' },
-  ],
+  quests: [],
 };
 
 function loadLocal() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-  } catch { return {}; }
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); }
+  catch { return {}; }
 }
 
 function saveLocal(data) {
@@ -65,11 +99,17 @@ function getHeaders() {
 
 function normalizeProfile(data) {
   const src = data && typeof data === 'object' ? data : {};
+  const kpi = { ...DEFAULT_KPI, ...(src.kpi || {}) };
+  const stats_levels = src.stats_levels || computeStatLevels(kpi);
+  const level = src.level ?? computeHeroLevel(stats_levels);
   return {
     ...DEFAULT_PROFILE,
     ...src,
-    kpi: { ...DEFAULT_PROFILE.kpi, ...(src.kpi || {}) },
+    level,
+    kpi,
     stats_xp: { ...DEFAULT_PROFILE.stats_xp, ...(src.stats_xp || {}) },
+    stats_levels,
+    goals: Array.isArray(src.goals) ? src.goals : [],
     season: src.season ?? DEFAULT_PROFILE.season,
   };
 }
@@ -115,42 +155,21 @@ async function apiFetch(path, options = {}) {
   }
 }
 
-function xpForNextLevel(level) {
-  return Math.max(1000, level * 900);
-}
-
-function recalcLevel(profile) {
-  let level = 1;
-  let remaining = profile.total_xp;
-  while (remaining >= xpForNextLevel(level) && level < 99) {
-    remaining -= xpForNextLevel(level);
-    level++;
-  }
-  profile.level = level;
-  profile.xp_in_level = remaining;
-  profile.xp_needed = xpForNextLevel(level);
-  const titles = [
-    [1,4,'ПЕРВЫЙ ШАГ'],[5,9,'ЧЕЛОВЕК ДЕЙСТВИЯ'],[10,14,'СТРОИТЕЛЬ'],
-    [15,19,'СТРОИТЕЛЬ БУДУЩЕГО'],[20,24,'ИГРОК БИЗНЕСА'],[25,29,'СОЗДАТЕЛЬ'],
-    [30,34,'РУКОВОДИТЕЛЬ'],[35,39,'СТРАТЕГ'],[40,44,'БИЗНЕСМЕН'],
-    [45,49,'МАСТЕР ИГРЫ'],[50,999,'АРХИТЕКТОР СОБСТВЕННОЙ ЖИЗНИ'],
-  ];
-  profile.title = titles.find(([a,b]) => level >= a && level <= b)?.[2] || 'АЛИХАН';
-}
-
 function cachedProfile() {
-  const local = loadLocal();
-  return normalizeProfile(local.profile || DEFAULT_PROFILE);
+  return normalizeProfile(loadLocal().profile || DEFAULT_PROFILE);
 }
 
 function cachedQuests() {
-  const local = loadLocal();
-  return normalizeQuestPack(local.quests || DEMO_QUESTS);
+  return normalizeQuestPack(loadLocal().quests || DEMO_QUESTS);
 }
 
 window.QuestAPI = {
+  STAT_KEYS,
+  STAT_LEVEL_RULES,
   cachedProfile,
   cachedQuests,
+  computeStatLevels,
+  computeHeroLevel,
 
   async getProfile() {
     try {
@@ -161,6 +180,25 @@ window.QuestAPI = {
       return { data, online: true };
     } catch {
       return { data: cachedProfile(), online: false };
+    }
+  },
+
+  async updateProfile(payload) {
+    try {
+      const data = normalizeProfile(await apiFetch('/me/', {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }));
+      const local = loadLocal();
+      local.profile = data;
+      saveLocal(local);
+      return { data, online: true };
+    } catch {
+      const local = loadLocal();
+      const profile = normalizeProfile({ ...cachedProfile(), ...payload, kpi: { ...cachedProfile().kpi, ...(payload.kpi || {}) } });
+      local.profile = profile;
+      saveLocal(local);
+      return { data: profile, online: false };
     }
   },
 
@@ -179,31 +217,80 @@ window.QuestAPI = {
   async importQuests(payload) {
     try {
       await apiFetch('/quests/import/', { method: 'POST', body: JSON.stringify(payload) });
+      return this.getTodayQuests();
+    } catch {
+      return { data: cachedQuests(), online: false };
+    }
+  },
+
+  async addQuest(payload) {
+    try {
+      const q = await apiFetch('/quests/manual/', { method: 'POST', body: JSON.stringify(payload) });
       return (await this.getTodayQuests()).data;
     } catch {
       const local = loadLocal();
-      let id = 1;
-      const quests = [];
-      (payload.blocks || []).forEach((block) => {
-        const labels = {
-          capital: '💰 Капитал', entrepreneur: '💼 Предприниматель', mastery: '🧠 Мастерство',
-          mabibip: '🚀 МаБибип', media: '🎥 Медийность', form: '💪 Форма',
-          network: '🤝 Связи', discipline: '⚡ Дисциплина',
-        };
-        (block.quests || []).forEach((q) => {
-          quests.push({
-            id: id++, stat_key: block.stat, stat_label: labels[block.stat] || block.stat,
-            title: q.title, xp_reward: q.xp || 40, status: 'pending',
-          });
-        });
-      });
-      local.quests = normalizeQuestPack({
-        date: new Date().toISOString().slice(0, 10),
-        main_mission: payload.main_mission || '',
-        quests,
-      });
+      const pack = normalizeQuestPack(local.quests || DEMO_QUESTS);
+      const id = Date.now();
+      pack.quests.push({ id, ...payload, status: 'pending', source: 'manual' });
+      local.quests = pack;
       saveLocal(local);
-      return local.quests;
+      return pack;
+    }
+  },
+
+  async updateQuest(id, payload) {
+    try {
+      await apiFetch(`/quests/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+      return (await this.getTodayQuests()).data;
+    } catch {
+      const local = loadLocal();
+      const pack = normalizeQuestPack(local.quests || DEMO_QUESTS);
+      const q = pack.quests.find((x) => x.id === id);
+      if (q) Object.assign(q, payload);
+      local.quests = pack;
+      saveLocal(local);
+      return pack;
+    }
+  },
+
+  async deleteQuest(id) {
+    try {
+      await apiFetch(`/quests/${id}/`, { method: 'DELETE' });
+      return (await this.getTodayQuests()).data;
+    } catch {
+      const local = loadLocal();
+      const pack = normalizeQuestPack(local.quests || DEMO_QUESTS);
+      pack.quests = pack.quests.filter((x) => x.id !== id);
+      local.quests = pack;
+      saveLocal(local);
+      return pack;
+    }
+  },
+
+  async getQuestDetail(id) {
+    try {
+      return await apiFetch(`/quests/${id}/`);
+    } catch {
+      const pack = cachedQuests();
+      const q = pack.quests.find((x) => x.id === id);
+      return q ? { ...q, reflection: {} } : null;
+    }
+  },
+
+  async getCalendar(year, month) {
+    try {
+      return await apiFetch(`/quests/calendar/?year=${year}&month=${month}`);
+    } catch {
+      return { year, month, days: {} };
+    }
+  },
+
+  async getQuestsByDate(dateStr) {
+    try {
+      return await apiFetch(`/quests/by-date/?date=${dateStr}`);
+    } catch {
+      if (cachedQuests().date === dateStr) return cachedQuests();
+      return { date: dateStr, main_mission: '', quests: [] };
     }
   },
 
@@ -222,11 +309,11 @@ window.QuestAPI = {
       profile.total_xp += quest.xp_reward;
       profile.stats_xp[quest.stat_key] = (profile.stats_xp[quest.stat_key] || 0) + quest.xp_reward;
       profile.action_streak = (profile.action_streak || 0) + 1;
-      recalcLevel(profile);
+      profile.xp_in_level = profile.total_xp % 1000;
       local.profile = profile;
       local.quests = pack;
       saveLocal(local);
-      return { xp_gained: quest.xp_reward, total_xp: profile.total_xp, level: profile.level, title: profile.title, streak: profile.action_streak };
+      return { xp_gained: quest.xp_reward, total_xp: profile.total_xp, level: profile.level, streak: profile.action_streak };
     }
   },
 };
