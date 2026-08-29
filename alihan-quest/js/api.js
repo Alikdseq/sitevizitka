@@ -56,7 +56,7 @@ function saveLocal(data) {
 }
 
 function getHeaders() {
-  const h = { 'Content-Type': 'application/json' };
+  const h = { 'Content-Type': 'application/json', Accept: 'application/json' };
   const tg = window.Telegram?.WebApp?.initData;
   if (tg) h['X-Telegram-Init-Data'] = tg;
   else h['X-Demo-Token'] = window.QUEST_CONFIG?.DEMO_TOKEN || 'demo-alihan-quest';
@@ -83,19 +83,33 @@ function normalizeQuestPack(data) {
   };
 }
 
+function getApiBase() {
+  return (localStorage.getItem('quest_api_base')
+    || window.QUEST_CONFIG?.API_BASE
+    || '').replace(/\/$/, '');
+}
+
+async function parseJsonResponse(res) {
+  const text = await res.text();
+  if (!text || text.trim().startsWith('<')) throw new Error('html response');
+  const data = JSON.parse(text);
+  if (!data || typeof data !== 'object') throw new Error('invalid json');
+  return data;
+}
+
 async function apiFetch(path, options = {}) {
-  const base = window.QUEST_CONFIG?.API_BASE || '';
+  const base = getApiBase();
   if (!base) throw new Error('offline');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 12000);
+  const timer = setTimeout(() => controller.abort(), 8000);
   try {
-    const res = await fetch(`${base.replace(/\/$/, '')}/api/v1${path}`, {
+    const res = await fetch(`${base}/api/v1${path}`, {
       ...options,
       signal: controller.signal,
       headers: { ...getHeaders(), ...options.headers },
     });
     if (!res.ok) throw new Error(`API ${res.status}`);
-    return res.json();
+    return parseJsonResponse(res);
   } finally {
     clearTimeout(timer);
   }
@@ -124,29 +138,48 @@ function recalcLevel(profile) {
   profile.title = titles.find(([a,b]) => level >= a && level <= b)?.[2] || 'АЛИХАН';
 }
 
+function cachedProfile() {
+  const local = loadLocal();
+  return normalizeProfile(local.profile || DEFAULT_PROFILE);
+}
+
+function cachedQuests() {
+  const local = loadLocal();
+  return normalizeQuestPack(local.quests || DEMO_QUESTS);
+}
+
 window.QuestAPI = {
+  cachedProfile,
+  cachedQuests,
+
   async getProfile() {
     try {
-      return normalizeProfile(await apiFetch('/me/'));
-    } catch {
+      const data = normalizeProfile(await apiFetch('/me/'));
       const local = loadLocal();
-      return normalizeProfile(local.profile || DEFAULT_PROFILE);
+      local.profile = data;
+      saveLocal(local);
+      return { data, online: true };
+    } catch {
+      return { data: cachedProfile(), online: false };
     }
   },
 
   async getTodayQuests() {
     try {
-      return normalizeQuestPack(await apiFetch('/quests/today/'));
-    } catch {
+      const data = normalizeQuestPack(await apiFetch('/quests/today/'));
       const local = loadLocal();
-      return normalizeQuestPack(local.quests || DEMO_QUESTS);
+      local.quests = data;
+      saveLocal(local);
+      return { data, online: true };
+    } catch {
+      return { data: cachedQuests(), online: false };
     }
   },
 
   async importQuests(payload) {
     try {
       await apiFetch('/quests/import/', { method: 'POST', body: JSON.stringify(payload) });
-      return this.getTodayQuests();
+      return (await this.getTodayQuests()).data;
     } catch {
       const local = loadLocal();
       let id = 1;
@@ -197,4 +230,3 @@ window.QuestAPI = {
     }
   },
 };
-

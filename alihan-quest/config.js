@@ -1,6 +1,6 @@
-// API base — замените на URL backend после деплоя (Railway/Render/VPS)
+// API backend URL. При перезапуске cloudflared URL меняется — обнови здесь или:
+// localStorage.setItem('quest_api_base', 'https://новый-url.trycloudflare.com')
 window.QUEST_CONFIG = {
-  // URL из окна cloudflared (меняется при каждом перезапуске quick tunnel)
-  API_BASE: 'https://experience-algebra-disposition-tell.trycloudflare.com',
+  API_BASE: localStorage.getItem('quest_api_base') || '',
   DEMO_TOKEN: 'demo-alihan-quest',
 };

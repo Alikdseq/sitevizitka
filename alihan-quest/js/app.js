@@ -9,9 +9,10 @@ const STAT_LABELS = {
 createApp({
   setup() {
     const tab = ref('home');
-    const profile = ref(null);
-    const questPack = ref(null);
+    const profile = ref(QuestAPI.cachedProfile());
+    const questPack = ref(QuestAPI.cachedQuests());
     const booting = ref(true);
+    const apiOnline = ref(false);
     const toast = ref('');
     const showReflect = ref(false);
     const showImport = ref(false);
@@ -57,12 +58,19 @@ createApp({
     }
 
     async function refresh() {
-      const [p, q] = await Promise.all([
-        QuestAPI.getProfile(),
-        QuestAPI.getTodayQuests(),
-      ]);
-      profile.value = p;
-      questPack.value = q;
+      try {
+        const [p, q] = await Promise.all([
+          QuestAPI.getProfile(),
+          QuestAPI.getTodayQuests(),
+        ]);
+        profile.value = p.data;
+        questPack.value = q.data;
+        apiOnline.value = p.online && q.online;
+      } catch {
+        profile.value = QuestAPI.cachedProfile();
+        questPack.value = QuestAPI.cachedQuests();
+        apiOnline.value = false;
+      }
     }
 
     function openQuest(q) {
@@ -124,7 +132,7 @@ createApp({
     });
 
     return {
-      tab, profile, questPack, booting, toast, showReflect, showImport, activeQuest,
+      tab, profile, questPack, booting, apiOnline, toast, showReflect, showImport, activeQuest,
       importJson, reflection, xpPercent, questsByStat, pendingCount, STAT_LABELS,
       fmtMoney, fmtNum, pct, switchTab, openQuest, submitQuest, doImport, loadSampleImport,
     };
@@ -135,9 +143,11 @@ createApp({
 
     <div v-if="booting" class="screen boot-screen"><p class="boot-text">Загрузка...</p></div>
 
-    <template v-else>
-      <!-- HOME -->
-      <div v-show="tab==='home'" class="screen tab-screen">
+    <div v-if="!booting && !apiOnline" class="offline-banner">
+      📡 Офлайн-режим · данные на телефоне. Запусти cloudflared и обнови URL backend.
+    </div>
+
+    <div v-show="!booting && tab==='home'" class="screen tab-screen">
         <div class="hero-card">
           <div class="hero-name">{{ profile.display_name }}</div>
           <div class="hero-level">LEVEL {{ profile.level }}</div>
@@ -183,8 +193,7 @@ createApp({
         </div>
       </div>
 
-      <!-- QUESTS -->
-      <div v-show="tab==='quests'" class="screen tab-screen">
+    <div v-show="!booting && tab==='quests'" class="screen tab-screen">
         <div class="section-head">⚔️ Daily Quest</div>
 
         <div v-if="!questPack.quests.length" class="empty-state">
@@ -215,8 +224,7 @@ createApp({
         </template>
       </div>
 
-      <!-- CHARACTER -->
-      <div v-show="tab==='character'" class="screen tab-screen">
+    <div v-show="!booting && tab==='character'" class="screen tab-screen">
         <div class="section-head">📊 8 характеристик</div>
         <div class="stat-grid">
           <div v-for="(xp, key) in profile.stats_xp" :key="key" class="stat-card">
@@ -230,8 +238,7 @@ createApp({
         </p>
       </div>
 
-      <!-- GOALS -->
-      <div v-show="tab==='goals'" class="screen tab-screen">
+    <div v-show="!booting && tab==='goals'" class="screen tab-screen">
         <div class="section-head">🎯 Цели</div>
         <div class="goal-block">
           <h4>🏠 Дом родителям</h4>
@@ -247,7 +254,6 @@ createApp({
           <div class="progress-mini" style="margin-top:8px"><div class="progress-mini-fill" :style="{width: pct(profile.kpi.weight_kg, profile.kpi.weight_goal_kg)+'%'}"></div></div>
         </div>
       </div>
-    </template>
 
     <!-- Reflection modal -->
     <div v-if="showReflect" class="modal-overlay" @click.self="showReflect=false">
