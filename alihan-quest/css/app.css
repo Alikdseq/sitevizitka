@@ -12,6 +12,8 @@
   --line: rgba(255,255,255,0.08);
   --tg-safe-top: env(safe-area-inset-top, 0px);
   --tg-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tg-viewport-height: 100vh;
+  --nav-height: 72px;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -19,16 +21,27 @@
 html {
   font-size: 17px;
   -webkit-text-size-adjust: 100%;
+  height: var(--tg-viewport-height);
 }
 
 body {
   font-family: "Segoe UI", system-ui, sans-serif;
   background: var(--bg);
   color: var(--ink);
-  min-height: 100vh;
-  padding-top: var(--tg-safe-top);
-  padding-bottom: calc(72px + var(--tg-safe-bottom));
-  overflow-x: hidden;
+  height: var(--tg-viewport-height);
+  min-height: var(--tg-viewport-height);
+  overflow: hidden;
+}
+
+.app-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: var(--tg-viewport-height);
+  min-height: var(--tg-viewport-height);
+  max-width: 480px;
+  margin: 0 auto;
+  overflow: hidden;
 }
 
 .app-bg {
@@ -38,28 +51,26 @@ body {
     radial-gradient(ellipse 80% 50% at 50% -10%, rgba(79,124,255,0.2), transparent),
     var(--bg);
   z-index: 0;
+  pointer-events: none;
 }
 
-#app { position: relative; z-index: 1; max-width: 480px; margin: 0 auto; }
+#app { position: relative; z-index: 1; height: 100%; }
 
-.screen { padding: 16px 16px 8px; animation: fadeIn 0.35s ease; }
-
-.tab-screen[v-cloak] { display: none; }
-
-.boot-screen {
-  min-height: 60vh;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.main-content {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  position: relative;
+  z-index: 1;
+  padding-top: var(--tg-safe-top);
 }
 
-.boot-text {
-  text-align: center;
-  color: var(--muted);
-  padding: 40px;
-}
+.screen { padding: 16px 16px 24px; }
 
 .offline-banner {
+  flex-shrink: 0;
   margin: 12px 16px 0;
   padding: 10px 14px;
   background: rgba(251, 191, 36, 0.12);
@@ -68,12 +79,19 @@ body {
   color: var(--gold);
   font-size: 0.78rem;
   line-height: 1.4;
+  position: relative;
+  z-index: 2;
 }
 
-@keyframes fadeIn {
-  from { opacity: 0; transform: translateY(8px); }
-  to { opacity: 1; transform: none; }
-}
+.quest-meta { font-size: 0.85rem; color: var(--muted); margin-bottom: 8px; }
+.quest-refresh { margin-top: 12px; }
+.rule-text { margin-top: 16px; font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+.rule-text strong { color: var(--ink); }
+.goal-text { color: var(--muted); font-size: 0.9rem; }
+.goal-progress { margin-top: 8px; }
+.modal-sub { font-size: 0.85rem; color: var(--muted); margin-bottom: 12px; }
+.import-actions { display: flex; gap: 8px; margin-top: 12px; }
+.import-actions .btn-primary { flex: 1; }
 
 .hero-card {
   background: linear-gradient(145deg, #1a2540, #121828);
@@ -214,11 +232,11 @@ body {
 .stat-card .xp { font-size: 1rem; font-weight: 700; color: var(--gold); margin-top: 2px; }
 
 .bottom-nav {
-  position: fixed;
-  bottom: 0; left: 0; right: 0;
-  z-index: 50;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 10;
   display: flex;
-  background: rgba(10,14,24,0.95);
+  background: rgba(10,14,24,0.98);
   border-top: 1px solid var(--line);
   backdrop-filter: blur(12px);
   padding-bottom: var(--tg-safe-bottom);
