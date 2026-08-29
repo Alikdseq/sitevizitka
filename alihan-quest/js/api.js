@@ -101,7 +101,7 @@ const DEFAULT_PROFILE = (() => {
 
 const DEMO_QUESTS = {
   date: new Date().toISOString().slice(0, 10),
-  main_mission: 'Получить новую бизнес-возможность',
+  main_mission: '',
   quests: [],
 };
 
@@ -168,12 +168,13 @@ async function apiFetch(path, options = {}) {
   const base = getApiBase();
   if (!base) throw new Error('offline');
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8000);
+  const timer = setTimeout(() => controller.abort(), 12000);
   try {
     const res = await fetch(`${base}/api/v1${path}`, {
       ...options,
       signal: controller.signal,
       headers: { ...getHeaders(), ...options.headers },
+      cache: 'no-store',
     });
     if (!res.ok) throw new Error(`API ${res.status}`);
     return parseJsonResponse(res);
@@ -199,6 +200,7 @@ window.QuestAPI = {
   computeHeroLevel,
   normalizeProfile,
   titleForLevel,
+  getApiBase,
 
   async getProfile() {
     try {
@@ -213,22 +215,14 @@ window.QuestAPI = {
   },
 
   async updateProfile(payload) {
-    try {
-      const data = normalizeProfile(await apiFetch('/me/', {
-        method: 'PATCH',
-        body: JSON.stringify(payload),
-      }));
-      const local = loadLocal();
-      local.profile = data;
-      saveLocal(local);
-      return { data, online: true };
-    } catch {
-      const local = loadLocal();
-      const profile = normalizeProfile({ ...cachedProfile(), ...payload, kpi: { ...cachedProfile().kpi, ...(payload.kpi || {}) } });
-      local.profile = profile;
-      saveLocal(local);
-      return { data: profile, online: false };
-    }
+    const data = normalizeProfile(await apiFetch('/me/', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }));
+    const local = loadLocal();
+    local.profile = data;
+    saveLocal(local);
+    return { data, online: true };
   },
 
   async getTodayQuests() {
@@ -244,72 +238,29 @@ window.QuestAPI = {
   },
 
   async importQuests(payload, replace = false) {
-    try {
-      const body = { ...(payload || {}), replace: Boolean(replace) };
-      await apiFetch('/quests/import/', { method: 'POST', body: JSON.stringify(body) });
-      return this.getTodayQuests();
-    } catch {
-      return { data: cachedQuests(), online: false };
-    }
+    const body = { ...(payload || {}), replace: Boolean(replace) };
+    await apiFetch('/quests/import/', { method: 'POST', body: JSON.stringify(body) });
+    return this.getTodayQuests();
   },
 
   async addQuest(payload) {
-    try {
-      const q = await apiFetch('/quests/manual/', { method: 'POST', body: JSON.stringify(payload) });
-      return (await this.getTodayQuests()).data;
-    } catch {
-      const local = loadLocal();
-      const pack = normalizeQuestPack(local.quests || DEMO_QUESTS);
-      const id = Date.now();
-      pack.quests.push({ id, ...payload, status: 'pending', source: 'manual' });
-      local.quests = pack;
-      saveLocal(local);
-      return pack;
-    }
+    await apiFetch('/quests/manual/', { method: 'POST', body: JSON.stringify(payload) });
+    return (await this.getTodayQuests()).data;
   },
 
   async updateQuest(id, payload) {
-    try {
-      await apiFetch(`/quests/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
-      return (await this.getTodayQuests()).data;
-    } catch {
-      const local = loadLocal();
-      const pack = normalizeQuestPack(local.quests || DEMO_QUESTS);
-      const q = pack.quests.find((x) => x.id === id);
-      if (q) Object.assign(q, payload);
-      local.quests = pack;
-      saveLocal(local);
-      return pack;
-    }
+    await apiFetch(`/quests/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+    return (await this.getTodayQuests()).data;
   },
 
   async deferQuest(id) {
-    try {
-      await apiFetch(`/quests/${id}/defer/`, { method: 'POST', body: '{}' });
-      return (await this.getTodayQuests()).data;
-    } catch {
-      const local = loadLocal();
-      const pack = normalizeQuestPack(local.quests || DEMO_QUESTS);
-      const q = pack.quests.find((x) => x.id === id);
-      if (q) pack.quests = pack.quests.filter((x) => x.id !== id);
-      local.quests = pack;
-      saveLocal(local);
-      return pack;
-    }
+    await apiFetch(`/quests/${id}/defer/`, { method: 'POST', body: '{}' });
+    return (await this.getTodayQuests()).data;
   },
 
   async deleteQuest(id) {
-    try {
-      await apiFetch(`/quests/${id}/`, { method: 'DELETE' });
-      return (await this.getTodayQuests()).data;
-    } catch {
-      const local = loadLocal();
-      const pack = normalizeQuestPack(local.quests || DEMO_QUESTS);
-      pack.quests = pack.quests.filter((x) => x.id !== id);
-      local.quests = pack;
-      saveLocal(local);
-      return pack;
-    }
+    await apiFetch(`/quests/${id}/`, { method: 'DELETE' });
+    return (await this.getTodayQuests()).data;
   },
 
   async getQuestDetail(id) {
@@ -340,25 +291,8 @@ window.QuestAPI = {
   },
 
   async completeQuest(questId, reflection) {
-    try {
-      return await apiFetch(`/quests/${questId}/complete/`, {
-        method: 'POST', body: JSON.stringify({ reflection }),
-      });
-    } catch {
-      const local = loadLocal();
-      const profile = normalizeProfile(local.profile || DEFAULT_PROFILE);
-      const pack = normalizeQuestPack(local.quests || DEMO_QUESTS);
-      const quest = pack.quests.find((q) => q.id === questId);
-      if (!quest || quest.status !== 'pending') return { error: 'already_processed' };
-      quest.status = 'done';
-      profile.total_xp += quest.xp_reward;
-      profile.stats_xp[quest.stat_key] = (profile.stats_xp[quest.stat_key] || 0) + quest.xp_reward;
-      profile.action_streak = (profile.action_streak || 0) + 1;
-      profile.xp_in_level = profile.total_xp % 1000;
-      local.profile = profile;
-      local.quests = pack;
-      saveLocal(local);
-      return { xp_gained: quest.xp_reward, total_xp: profile.total_xp, level: profile.level, streak: profile.action_streak };
-    }
+    return await apiFetch(`/quests/${questId}/complete/`, {
+      method: 'POST', body: JSON.stringify({ reflection }),
+    });
   },
 };

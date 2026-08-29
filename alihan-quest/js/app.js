@@ -191,13 +191,11 @@ createApp({
         QuestAPI.getProfile(),
         QuestAPI.getTodayQuests(),
       ]);
-      profile.value = QuestAPI.cachedProfile();
-      questPack.value = QuestAPI.cachedQuests();
-      const nextProfile = pickData(p, QuestAPI.cachedProfile);
-      const nextQuests = pickData(q, QuestAPI.cachedQuests);
-      if (nextProfile) profile.value = ensureProfile(nextProfile);
-      if (nextQuests) questPack.value = nextQuests;
       apiOnline.value = Boolean(p?.online && q?.online);
+      if (p?.online && p.data) profile.value = ensureProfile(p.data);
+      else profile.value = ensureProfile(QuestAPI.cachedProfile());
+      if (q?.online && q.data) questPack.value = q.data;
+      else questPack.value = QuestAPI.cachedQuests();
     }
 
     function openKpiEdit() {
@@ -207,10 +205,14 @@ createApp({
     }
 
     async function saveKpi() {
-      const result = await QuestAPI.updateProfile({ kpi: { ...kpiForm.value } });
-      profile.value = ensureProfile(pickData(result, QuestAPI.cachedProfile));
-      showKpiEdit.value = false;
-      showToast('KPI сохранены ✓');
+      try {
+        const result = await QuestAPI.updateProfile({ kpi: { ...kpiForm.value } });
+        profile.value = ensureProfile(result.data);
+        showKpiEdit.value = false;
+        showToast('KPI сохранены ✓');
+      } catch {
+        showToast('Нет связи с сервером — KPI не сохранены');
+      }
     }
 
     function fmtDueTime(value) {
@@ -250,10 +252,14 @@ createApp({
         showToast('Введите название');
         return;
       }
-      const pack = await QuestAPI.addQuest(questPayloadFromForm());
-      if (pack) questPack.value = pack;
-      showAddQuest.value = false;
-      showToast('Квест добавлен ✓');
+      try {
+        const pack = await QuestAPI.addQuest(questPayloadFromForm());
+        if (pack) questPack.value = pack;
+        showAddQuest.value = false;
+        showToast('Квест добавлен ✓');
+      } catch {
+        showToast('Нет связи с сервером — задача не сохранена');
+      }
     }
 
     async function saveEditedQuest() {
@@ -261,19 +267,27 @@ createApp({
         showToast('Введите название');
         return;
       }
-      const pack = await QuestAPI.updateQuest(activeQuest.value.id, questPayloadFromForm());
-      if (pack) questPack.value = pack;
-      showEditQuest.value = false;
-      activeQuest.value = null;
-      showToast('Квест обновлён ✓');
+      try {
+        const pack = await QuestAPI.updateQuest(activeQuest.value.id, questPayloadFromForm());
+        if (pack) questPack.value = pack;
+        showEditQuest.value = false;
+        activeQuest.value = null;
+        showToast('Квест обновлён ✓');
+      } catch {
+        showToast('Нет связи с сервером');
+      }
     }
 
     async function removeQuest(q, event) {
       if (event) event.stopPropagation();
       if (!q?.id) return;
-      const pack = await QuestAPI.deleteQuest(q.id);
-      if (pack) questPack.value = pack;
-      showToast('Квест удалён');
+      try {
+        const pack = await QuestAPI.deleteQuest(q.id);
+        if (pack) questPack.value = pack;
+        showToast('Квест удалён');
+      } catch {
+        showToast('Нет связи с сервером');
+      }
     }
 
     function openQuest(q) {
@@ -303,9 +317,13 @@ createApp({
     async function deferQuestToTomorrow(q, event) {
       if (event) event.stopPropagation();
       if (!q?.id || q.status !== 'pending') return;
-      const pack = await QuestAPI.deferQuest(q.id);
-      if (pack) questPack.value = pack;
-      showToast('→ Завтра ✓');
+      try {
+        const pack = await QuestAPI.deferQuest(q.id);
+        if (pack) questPack.value = pack;
+        showToast('→ Завтра ✓');
+      } catch {
+        showToast('Нет связи с сервером');
+      }
     }
 
     function onQuestTouchStart(q, e) {
@@ -357,7 +375,7 @@ createApp({
         importJson.value = '';
         showToast(wasReplace ? 'Quest Pack заменён ✓' : 'Квесты добавлены ✓', 2000);
       } catch {
-        showToast('Ошибка JSON', 2000);
+        showToast('Ошибка: нет связи или неверный JSON', 2000);
       }
     }
 
@@ -481,10 +499,18 @@ createApp({
 
     watch(tab, async (name) => {
       if (name === 'journal') await loadCalendar();
+      if (name === 'quests' || name === 'home') await refresh();
     });
 
     onMounted(async () => {
       setupTelegramViewport();
+      const tg = window.Telegram?.WebApp;
+      if (tg && typeof tg.onEvent === 'function') {
+        tg.onEvent('viewportChanged', () => refresh());
+      }
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') refresh();
+      });
       try {
         await refresh();
       } catch {
@@ -505,7 +531,7 @@ createApp({
       calendarCells, calendarTitle, detailReadOnly,
       STAT_LABELS, KPI_FIELDS, REFLECTION_FIELDS,
       QuestAPI,
-      fmtMoney, fmtNum, fmtDueTime, pct, showToast, switchTab,
+      fmtMoney, fmtNum, fmtDueTime, pct, showToast, switchTab, refresh,
       openKpiEdit, saveKpi,
       openAddQuest, openEditQuest, saveNewQuest, saveEditedQuest, removeQuest, deferQuestToTomorrow,
       onQuestTouchStart, onQuestTouchMove, onQuestTouchEnd, questSwipeStyle,
@@ -522,7 +548,7 @@ createApp({
       <div v-if="toast" class="toast">{{ toast }}</div>
 
       <div v-if="!apiOnline" class="offline-banner">
-        📡 Офлайн · локальные данные. Backend: проверь cloudflared + Django.
+        📡 Нет связи с сервером — показан кэш. Задачи из бота не видны, пока backend недоступен. Проверь cloudflared + Django.
       </div>
 
       <main class="main-content">
@@ -609,6 +635,7 @@ createApp({
 
           <div class="quest-actions-row">
             <button type="button" class="btn btn-secondary btn-sm" @click="openImport(false)">📥 Импорт JSON</button>
+            <button type="button" class="btn btn-secondary btn-sm" @click="refresh">↻ Обновить</button>
           </div>
 
           <div v-if="!questPack.quests.length" class="empty-state">
