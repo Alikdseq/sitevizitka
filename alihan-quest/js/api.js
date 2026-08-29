@@ -273,8 +273,12 @@ window.QuestAPI = {
     return (await this.getTodayQuests()).data;
   },
 
+  async patchQuest(id, payload) {
+    return await apiFetch(`/quests/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
   async updateQuest(id, payload) {
-    await apiFetch(`/quests/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+    await this.patchQuest(id, payload);
     return (await this.getTodayQuests()).data;
   },
 

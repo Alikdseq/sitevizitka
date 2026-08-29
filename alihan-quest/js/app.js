@@ -90,7 +90,7 @@ createApp({
     const showReflect = ref(false);
     const showImport = ref(false);
     const importReplace = ref(false);
-    const swipe = ref({ id: null, startX: 0, deltaX: 0 });
+    const swipe = ref({ id: null, startX: 0, startY: 0, deltaX: 0 });
     const syncInfo = ref(null);
     const showKpiEdit = ref(false);
     const showAddQuest = ref(false);
@@ -103,6 +103,7 @@ createApp({
     const detailQuest = ref(null);
     const importJson = ref('');
     const reflection = ref(emptyReflection());
+    const progressNotes = ref('');
 
     const kpiForm = ref({});
     const questForm = ref({ title: '', stat_key: 'discipline', xp_reward: 30, due_time: '' });
@@ -280,27 +281,119 @@ createApp({
       }
     }
 
-    async function removeQuest(q, event) {
+    function syncQuestInLists(updated) {
+      if (!updated?.id) return;
+      if (questPack.value?.quests) {
+        const i = questPack.value.quests.findIndex((x) => x.id === updated.id);
+        if (i >= 0) questPack.value.quests[i] = { ...questPack.value.quests[i], ...updated };
+      }
+      if (journalQuests.value?.quests) {
+        const j = journalQuests.value.quests.findIndex((x) => x.id === updated.id);
+        if (j >= 0) journalQuests.value.quests[j] = { ...journalQuests.value.quests[j], ...updated };
+      }
+    }
+
+    async function removeQuest(q, event, context = 'quests') {
       if (event) event.stopPropagation();
-      if (!q?.id) return;
+      if (!q?.id || q.status !== 'pending') return;
+      if (!window.confirm(`Удалить задачу «${q.title}»?`)) return;
       try {
-        const pack = await QuestAPI.deleteQuest(q.id);
-        if (pack) questPack.value = pack;
+        await QuestAPI.deleteQuest(q.id);
+        await afterQuestDeleted(context);
         showToast('Квест удалён');
       } catch {
         showToast('Нет связи с сервером');
       }
     }
 
-    function openQuest(q) {
+    async function afterQuestDeleted(context) {
+      if (context === 'journal') {
+        if (selectedDate.value) await loadJournalDay(selectedDate.value);
+        await loadCalendar();
+        const today = new Date().toISOString().slice(0, 10);
+        if (selectedDate.value === today || questPack.value?.date === today) {
+          const q = await QuestAPI.getTodayQuests();
+          if (q.online && q.data) questPack.value = q.data;
+        }
+        return;
+      }
+      const q = await QuestAPI.getTodayQuests();
+      if (q.online && q.data) questPack.value = q.data;
+      if (tab.value === 'journal') await loadCalendar();
+    }
+
+    function resetSwipe() {
+      swipe.value = { id: null, startX: 0, startY: 0, deltaX: 0 };
+    }
+
+    function onQuestTouchStart(q, e) {
+      if (q.status !== 'pending') return;
+      swipe.value = {
+        id: q.id,
+        startX: e.touches[0].clientX,
+        startY: e.touches[0].clientY,
+        deltaX: 0,
+      };
+    }
+
+    function onQuestTouchMove(q, e) {
+      if (swipe.value.id !== q.id) return;
+      const dx = e.touches[0].clientX - swipe.value.startX;
+      if (dx > 0) swipe.value = { ...swipe.value, deltaX: dx };
+    }
+
+    async function onQuestTouchEnd(q) {
+      if (swipe.value.id !== q.id) return;
+      const { deltaX } = swipe.value;
+      resetSwipe();
+      if (deltaX >= 80) await deferQuestToTomorrow(q);
+    }
+
+    async function openQuest(q) {
       if (q.status !== 'pending') return;
       activeQuest.value = q;
+      progressNotes.value = q.progress_notes || '';
       reflection.value = emptyReflection();
       showReflect.value = true;
+      try {
+        const detail = await QuestAPI.getQuestDetail(q.id);
+        if (detail) {
+          activeQuest.value = { ...q, ...detail };
+          progressNotes.value = detail.progress_notes || '';
+          if (detail.reflection) {
+            reflection.value = { ...emptyReflection(), ...detail.reflection };
+          }
+        }
+      } catch {
+        /* offline — локальные данные */
+      }
+    }
+
+    async function saveQuestNotes() {
+      if (!activeQuest.value?.id) return;
+      try {
+        const updated = await QuestAPI.patchQuest(activeQuest.value.id, {
+          progress_notes: progressNotes.value,
+          reflection: reflection.value,
+        });
+        syncQuestInLists(updated);
+        activeQuest.value = { ...activeQuest.value, ...updated };
+        showToast('Заметки сохранены ✓');
+      } catch {
+        showToast('Нет связи с сервером');
+      }
     }
 
     async function submitQuest() {
       if (!activeQuest.value?.id) return;
+      try {
+        await QuestAPI.patchQuest(activeQuest.value.id, {
+          progress_notes: progressNotes.value,
+          reflection: reflection.value,
+        });
+      } catch {
+        /* продолжаем завершение */
+      }
       const result = await QuestAPI.completeQuest(activeQuest.value.id, reflection.value);
       showReflect.value = false;
       if (result?.error) {
@@ -326,24 +419,6 @@ createApp({
       } catch {
         showToast('Нет связи с сервером');
       }
-    }
-
-    function onQuestTouchStart(q, e) {
-      if (q.status !== 'pending') return;
-      swipe.value = { id: q.id, startX: e.touches[0].clientX, deltaX: 0 };
-    }
-
-    function onQuestTouchMove(q, e) {
-      if (swipe.value.id !== q.id) return;
-      const delta = e.touches[0].clientX - swipe.value.startX;
-      if (delta > 0) swipe.value = { ...swipe.value, deltaX: delta };
-    }
-
-    async function onQuestTouchEnd(q) {
-      if (swipe.value.id !== q.id) return;
-      const { deltaX } = swipe.value;
-      swipe.value = { id: null, startX: 0, deltaX: 0 };
-      if (deltaX >= 80) await deferQuestToTomorrow(q);
     }
 
     function questSwipeStyle(q) {
@@ -472,7 +547,15 @@ createApp({
       if (!detailQuest.value.reflection) {
         detailQuest.value.reflection = emptyReflection();
       }
+      if (detailQuest.value.progress_notes == null) {
+        detailQuest.value.progress_notes = q.progress_notes || '';
+      }
       showQuestDetail.value = true;
+    }
+
+    function openJournalQuest(q) {
+      if (q.status === 'pending') openQuest(q);
+      else openQuestDetail(q);
     }
 
     async function prevMonth() {
@@ -526,7 +609,7 @@ createApp({
       tab, profile, displayProfile, questPack, apiOnline, toast, swipe, syncInfo,
       showReflect, showImport, importReplace, showKpiEdit, showAddQuest, showEditQuest,
       showGoalEdit, showGoalAdd, showQuestDetail,
-      activeQuest, detailQuest, importJson, reflection,
+      activeQuest, detailQuest, importJson, reflection, progressNotes,
       kpiForm, questForm, goalForm, savingsForm,
       calendarYear, calendarMonth, calendarData, selectedDate, journalQuests,
       xpPercent, questsByStat, pendingCount, statKeys,
@@ -537,10 +620,10 @@ createApp({
       openKpiEdit, saveKpi,
       openAddQuest, openEditQuest, saveNewQuest, saveEditedQuest, removeQuest, deferQuestToTomorrow,
       onQuestTouchStart, onQuestTouchMove, onQuestTouchEnd, questSwipeStyle,
-      openQuest, submitQuest, openImport, openReplaceImport, doImport, loadSampleImport,
+      openQuest, saveQuestNotes, submitQuest, openImport, openReplaceImport, doImport, loadSampleImport,
       openGoalEdit, openGoalAdd, saveSavings, saveNewGoal,
       loadCalendar, calDayClass, selectCalendarDay, loadJournalDay,
-      openQuestDetail, prevMonth, nextMonth,
+      openQuestDetail, openJournalQuest, prevMonth, nextMonth,
     };
   },
   template: `
@@ -657,7 +740,8 @@ createApp({
             <template v-for="(quests, statKey) in questsByStat" :key="statKey">
               <div class="quest-group-title">{{ STAT_LABELS[statKey] || statKey }}</div>
               <div v-for="q in quests" :key="q.id"
-                   class="quest-item quest-swipe-wrap" :class="{done: q.status==='done', failed: q.status==='failed', swiping: swipe.id===q.id}"
+                   class="quest-item quest-swipe-wrap"
+                   :class="{done: q.status==='done', failed: q.status==='failed', swiping: swipe.id===q.id && swipe.deltaX}"
                    :style="questSwipeStyle(q)"
                    @touchstart.passive="onQuestTouchStart(q, $event)"
                    @touchmove.passive="onQuestTouchMove(q, $event)"
@@ -666,12 +750,12 @@ createApp({
                 <div v-if="q.status==='pending'" class="quest-swipe-hint">→ завтра</div>
                 <div class="quest-check">{{ q.status==='done' ? '✓' : '' }}</div>
                 <div class="quest-body">
-                  <div class="quest-title">{{ q.title }}</div>
+                  <div class="quest-title">{{ q.title }}<span v-if="q.progress_notes" class="quest-has-notes" title="Есть заметки"> 📝</span></div>
                   <div class="quest-xp">+{{ q.xp_reward }} XP · {{ STAT_LABELS[q.stat_key] || q.stat_key }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
                 </div>
                 <div v-if="q.status==='pending'" class="quest-actions" @click.stop>
                   <button type="button" class="edit-btn edit-btn-sm" @click="openEditQuest(q)">✏️</button>
-                  <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="removeQuest(q, $event)">🗑</button>
+                  <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="removeQuest(q, $event, 'quests')">🗑</button>
                 </div>
               </div>
             </template>
@@ -788,12 +872,16 @@ createApp({
               <p>Нет квестов на этот день</p>
             </div>
             <div v-for="q in journalQuests.quests" :key="q.id"
-                 class="quest-item" :class="{done: q.status==='done', failed: q.status==='failed'}"
-                 @click="openQuestDetail(q)">
+                 class="quest-item"
+                 :class="{done: q.status==='done', failed: q.status==='failed'}"
+                 @click="openJournalQuest(q)">
               <div class="quest-check">{{ q.status==='done' ? '✓' : q.status==='failed' ? '✗' : '' }}</div>
               <div class="quest-body">
-                <div class="quest-title">{{ q.title }}</div>
-                <div class="quest-xp">+{{ q.xp_reward }} XP · {{ STAT_LABELS[q.stat_key] || q.stat_key }}</div>
+                <div class="quest-title">{{ q.title }}<span v-if="q.progress_notes" class="quest-has-notes"> 📝</span></div>
+                <div class="quest-xp">+{{ q.xp_reward }} XP · {{ STAT_LABELS[q.stat_key] || q.stat_key }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
+              </div>
+              <div v-if="q.status==='pending'" class="quest-actions" @click.stop>
+                <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="removeQuest(q, $event, 'journal')">🗑</button>
               </div>
             </div>
           </div>
@@ -808,17 +896,30 @@ createApp({
         <button type="button" class="nav-item" :class="{active: tab==='journal'}" @click="switchTab('journal')"><span class="ico">📅</span>JOURNAL</button>
       </nav>
 
-      <!-- Reflection / Complete -->
+      <!-- Work on quest / Complete -->
       <div v-if="showReflect" class="modal-overlay" @click.self="showReflect=false">
-        <div class="modal">
-          <h3>📝 Разбор задачи</h3>
-          <p class="modal-sub">{{ activeQuest?.title }}</p>
+        <div class="modal modal-work">
+          <h3>📋 {{ activeQuest?.title }}</h3>
+          <p class="modal-sub">+{{ activeQuest?.xp_reward }} XP · {{ STAT_LABELS[activeQuest?.stat_key] || activeQuest?.stat_key }}</p>
+
+          <div class="field field-notes">
+            <label>Заметки в процессе</label>
+            <textarea
+              v-model="progressNotes"
+              class="notes-area"
+              rows="5"
+              placeholder="Пиши здесь — сохранится на сервере. Можно закрыть и дополнять позже."
+            ></textarea>
+            <button type="button" class="btn btn-secondary btn-sm btn-save-notes" @click="saveQuestNotes">💾 Сохранить заметки</button>
+          </div>
+
+          <div class="work-divider">Разбор при завершении</div>
           <div v-for="f in REFLECTION_FIELDS" :key="f.key" class="field">
             <label>{{ f.label }}</label>
             <textarea v-model="reflection[f.key]"></textarea>
           </div>
           <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" @click="showReflect=false">Отмена</button>
+            <button type="button" class="btn btn-secondary" @click="showReflect=false">Закрыть</button>
             <button type="button" class="btn btn-primary" @click="submitQuest">☑ Выполнено +{{ activeQuest?.xp_reward }} XP</button>
           </div>
         </div>
@@ -985,6 +1086,14 @@ createApp({
             +{{ detailQuest?.xp_reward }} XP · {{ STAT_LABELS[detailQuest?.stat_key] || detailQuest?.stat_key }}
             · {{ detailQuest?.date || selectedDate }}
           </p>
+          <div v-if="detailQuest?.progress_notes" class="field">
+            <label>Заметки в процессе</label>
+            <textarea
+              v-model="detailQuest.progress_notes"
+              readonly
+              class="readonly"
+            ></textarea>
+          </div>
           <div v-for="f in REFLECTION_FIELDS" :key="f.key" class="field">
             <label>{{ f.label }}</label>
             <textarea
@@ -995,10 +1104,10 @@ createApp({
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="showQuestDetail=false">Закрыть</button>
-            <button v-if="detailQuest?.status==='pending' && detailQuest?.date===questPack.date"
+            <button v-if="detailQuest?.status==='pending'"
                     type="button" class="btn btn-primary"
                     @click="showQuestDetail=false; openQuest(detailQuest)">
-              Выполнить
+              Открыть задачу
             </button>
           </div>
         </div>
