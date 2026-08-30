@@ -689,6 +689,13 @@ body.theme-forest { --bg: #071510; --card: #0f2419; --gold: #4ade80; }
   line-height: 1.35;
 }
 
+.stat-rule-hint {
+  font-size: 0.68rem;
+  color: var(--muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
 /* Form grid in modals */
 .form-grid {
   display: grid;

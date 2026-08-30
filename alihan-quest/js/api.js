@@ -38,8 +38,16 @@ function computeStatLevelsFromDefinitions(definitions) {
   return out;
 }
 
-function computeStatLevels(kpi, definitions) {
-  if (definitions?.length) return computeStatLevelsFromDefinitions(definitions);
+function computeStatLevels(kpi, definitions, statsXp) {
+  if (definitions?.length) {
+    const out = {};
+    definitions.forEach((d) => {
+      const xp = Number((statsXp && statsXp[d.key]) ?? d.xp ?? 0);
+      const need = Math.max(1, Number(d.xp_per_level || 1000));
+      out[d.key] = Math.floor(xp / need);
+    });
+    return out;
+  }
   const k = kpi || {};
   return {
     capital: Math.floor(Number(k.capital_season || 0) / 10000),
@@ -190,7 +198,10 @@ function normalizeProfile(data) {
   const src = data && typeof data === 'object' ? data : {};
   const kpi = { ...DEFAULT_KPI, ...(src.kpi || {}) };
   const statDefinitions = Array.isArray(src.stat_definitions) ? src.stat_definitions : [];
-  const stats_levels = computeStatLevels(kpi, statDefinitions);
+  const stats_xp = { ...DEFAULT_PROFILE.stats_xp, ...(src.stats_xp || {}) };
+  const stats_levels = src.stats_levels && Object.keys(src.stats_levels).length
+    ? { ...src.stats_levels }
+    : computeStatLevels(kpi, statDefinitions, stats_xp);
   const level = computeHeroLevel(stats_levels);
   const title = titleForLevel(level);
   const statLabels = src.stat_labels && typeof src.stat_labels === 'object' ? src.stat_labels : null;
@@ -496,5 +507,18 @@ window.QuestAPI = {
       method: 'PATCH',
       body: JSON.stringify({ habits }),
     });
+  },
+
+  async createGoal(payload) {
+    const goal = await apiFetch('/goals/', { method: 'POST', body: JSON.stringify(payload) });
+    return goal;
+  },
+
+  async updateGoal(id, payload) {
+    return await apiFetch(`/goals/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
+  async deleteGoal(id) {
+    return await apiFetch(`/goals/${id}/`, { method: 'DELETE' });
   },
 };

@@ -109,8 +109,8 @@ createApp({
     const showKpiEdit = ref(false);
     const showAddQuest = ref(false);
     const showEditQuest = ref(false);
-    const showGoalEdit = ref(false);
     const showGoalAdd = ref(false);
+    const editingGoalId = ref(null);
     const showQuestDetail = ref(false);
     const showChestLoot = ref(false);
     const chestLoot = ref(null);
@@ -151,8 +151,7 @@ createApp({
     const questForm = ref({ title: '', stat_key: 'discipline', xp_reward: 30, due_time: '' });
 
     const displayProfile = computed(() => ensureProfile(profile.value));
-    const goalForm = ref({ title: '', description: '', current_value: 0, target_value: 0 });
-    const savingsForm = ref({ home_savings: 0, home_goal: 0, car_savings: 0, car_goal: 0 });
+    const goalForm = ref({ title: '', description: '', emoji: '🎯', metric_unit: '', current_value: 0, target_value: 0 });
 
     const calendarYear = ref(new Date().getFullYear());
     const calendarMonth = ref(new Date().getMonth() + 1);
@@ -209,7 +208,16 @@ createApp({
     function statRule(key) {
       const def = displayProfile.value?.stat_definitions?.find((d) => d.key === key);
       if (def?.rule_label) return def.rule_label;
+      if (def?.xp_per_level) return `${def.xp_per_level} XP = 1 ур.`;
       return QuestAPI.STAT_LEVEL_RULES[key] || '';
+    }
+
+    function statProgress(key) {
+      const def = displayProfile.value?.stat_definitions?.find((d) => d.key === key);
+      if (def?.progress) return def.progress;
+      const xp = displayProfile.value?.stats_xp?.[key] ?? 0;
+      const need = def?.xp_per_level || 1000;
+      return { current: xp % need, needed: need, level: Math.floor(xp / need) };
     }
 
     const calendarCells = computed(() => {
@@ -274,7 +282,7 @@ createApp({
     function handleQuestCompleteCelebration(result) {
       const cel = result?.celebration;
       playCelebration(cel?.animations || ['xp_burst', 'confetti'], cel);
-      let msg = cel?.message || `+${result.xp_gained} ОП ⚡`;
+      let msg = cel?.message || `+${result.xp_gained} XP ⚡`;
       if (result.coins_gained) msg += ` · +${result.coins_gained} 🪙`;
       if (cel?.level_up) msg += ` · 🎉 ${cel.level_up.stat_label} ур. ${cel.level_up.new}!`;
       if (cel?.chest_earned) msg += ' · 🏆 Сундук победы!';
@@ -485,7 +493,7 @@ createApp({
         const result = await QuestAPI.completeGrowthNode(activeGrowthNode.value.id, growthReflection.value);
         showGrowthNode.value = false;
         playCelebration(result?.celebration?.animations || ['xp_burst']);
-        showToast(`+${result.xp_gained} ОП · Путь роста`);
+        showToast(`+${result.xp_gained} XP · Путь роста`);
         await Promise.all([refresh(), loadGrowth()]);
       } catch {
         showToast('Нет связи с сервером');
@@ -511,7 +519,7 @@ createApp({
     }
 
     function addOnboardingStat(preset) {
-      const item = preset || { emoji: '⭐', label: 'Новая', key: `custom_${Date.now()}`, rule_type: 'every_n', rule_value: 1, rule_label: '1 = 1 ур.' };
+      const item = preset || { emoji: '⭐', label: 'Новая', key: `custom_${Date.now()}`, xp_per_level: 1000 };
       onboardingStats.value.push({ ...item, key: item.key || `custom_${onboardingStats.value.length}` });
     }
 
@@ -548,6 +556,14 @@ createApp({
       } catch {
         showToast('Ошибка сохранения');
       }
+    }
+
+    function addStatRow() {
+      statEditForm.value.push({ emoji: '⭐', label: 'Новая', key: `custom_${Date.now()}`, xp_per_level: 1000 });
+    }
+
+    function removeStatRow(idx) {
+      statEditForm.value.splice(idx, 1);
     }
 
     function openStatEdit() {
@@ -852,46 +868,67 @@ createApp({
       }, null, 2);
     }
 
-    function openGoalEdit() {
-      const kpi = (profile.value || QuestAPI.cachedProfile()).kpi || {};
-      savingsForm.value = {
-        home_savings: kpi.home_savings || 0,
-        home_goal: kpi.home_goal || 0,
-        car_savings: kpi.car_savings || 0,
-        car_goal: kpi.car_goal || 0,
-      };
-      showGoalEdit.value = true;
-    }
-
     function openGoalAdd() {
-      goalForm.value = { title: '', description: '', current_value: 0, target_value: 0 };
+      editingGoalId.value = null;
+      goalForm.value = { title: '', description: '', emoji: '🎯', metric_unit: '', current_value: 0, target_value: 0 };
       showGoalAdd.value = true;
     }
 
-    async function saveSavings() {
-      const result = await QuestAPI.updateProfile({ kpi: { ...savingsForm.value } });
-      profile.value = ensureProfile(pickData(result, QuestAPI.cachedProfile));
-      showGoalEdit.value = false;
-      showToast('Накопления сохранены ✓');
+    function openGoalEditGoal(g) {
+      editingGoalId.value = g.id;
+      goalForm.value = {
+        title: g.title || '',
+        description: g.description || '',
+        emoji: g.emoji || '🎯',
+        metric_unit: g.metric_unit || '',
+        current_value: Number(g.current_value) || 0,
+        target_value: Number(g.target_value) || 0,
+      };
+      showGoalAdd.value = true;
     }
 
-    async function saveNewGoal() {
+    async function saveGoalForm() {
       if (!goalForm.value.title?.trim()) {
         showToast('Введите название цели');
         return;
       }
-      const result = await QuestAPI.updateProfile({
-        goals: [{
+      try {
+        const payload = {
           title: goalForm.value.title.trim(),
           description: goalForm.value.description || '',
-          category: 'custom',
+          emoji: goalForm.value.emoji || '🎯',
+          metric_unit: goalForm.value.metric_unit || '',
           current_value: Number(goalForm.value.current_value) || 0,
           target_value: Number(goalForm.value.target_value) || 0,
-        }],
-      });
-      profile.value = ensureProfile(pickData(result, QuestAPI.cachedProfile));
-      showGoalAdd.value = false;
-      showToast('Цель добавлена ✓');
+        };
+        if (editingGoalId.value) {
+          await QuestAPI.updateGoal(editingGoalId.value, payload);
+          showToast('Цель обновлена ✓');
+        } else {
+          await QuestAPI.createGoal(payload);
+          showToast('Цель добавлена ✓');
+        }
+        await refresh();
+        showGoalAdd.value = false;
+      } catch {
+        showToast('Не удалось сохранить цель');
+      }
+    }
+
+    async function deleteGoalAction(g) {
+      if (!g?.id) return;
+      try {
+        await QuestAPI.deleteGoal(g.id);
+        await refresh();
+        showToast('Цель удалена');
+      } catch {
+        showToast('Не удалось удалить');
+      }
+    }
+
+    function goalProgressLabel(g) {
+      const unit = g.metric_unit ? ` ${g.metric_unit}` : '';
+      return `${fmtNum(g.current_value)}${unit}${g.target_value ? ` / ${fmtNum(g.target_value)}${unit}` : ''}`;
     }
 
     async function loadCalendar() {
@@ -1006,7 +1043,7 @@ createApp({
     return {
       tab, profile, displayProfile, questPack, apiOnline, authError, toast, swipe, syncInfo,
       showReflect, showImport, importReplace, showKpiEdit, showAddQuest, showEditQuest,
-      showGoalEdit, showGoalAdd, showQuestDetail, showChestLoot, showEveningChest,
+      showGoalAdd, showQuestDetail, showChestLoot, showEveningChest,
       showGrowthNode, activeGrowthNode, growthReflection,
       celebrationFx, celebrationPayload,
       showOnboarding, onboardingStep, onboardingName, onboardingStats, onboardingHabits, statPresets,
@@ -1015,7 +1052,7 @@ createApp({
       clanData, clanForm, shopThemes, subscription,
       chestSummary, victoryProgressPct, readyChests,
       activeQuest, detailQuest, importJson, reflection, progressNotes,
-      kpiForm, questForm, goalForm, savingsForm,
+      kpiForm, questForm, goalForm, editingGoalId,
       calendarYear, calendarMonth, calendarData, selectedDate, journalQuests,
       xpPercent, questsByStat, pendingCount, statKeys,
       statLabel, statRule,
@@ -1026,14 +1063,14 @@ createApp({
       playCelebration, openReadyChest, claimMorning, openEveningChestModal, submitEveningChest,
       loadLeague, loadGrowth, loadJournalInsights, growthNodeIcon, growthNodeClass, openGrowthNode, submitGrowthNode,
       initOnboarding, submitOnboardingStep, addOnboardingStat, removeOnboardingStat, addOnboardingHabit,
-      openStatEdit, saveStatEdit,
+      openStatEdit, saveStatEdit, addStatRow, removeStatRow,
+      openGoalAdd, openGoalEditGoal, saveGoalForm, deleteGoalAction, goalProgressLabel, statProgress,
       loadClan, loadShop, createClanAction, joinClanAction, leaveClanAction,
       activateThemeAction, checkoutProAction, useGraceAction,
       openKpiEdit, saveKpi,
       openAddQuest, openEditQuest, saveNewQuest, saveEditedQuest, removeQuest, deferQuestToTomorrow,
       onQuestTouchStart, onQuestTouchMove, onQuestTouchEnd, questSwipeStyle,
       openQuest, saveQuestNotes, submitQuest, openImport, openReplaceImport, doImport, loadSampleImport,
-      openGoalEdit, openGoalAdd, saveSavings, saveNewGoal,
       loadCalendar, calDayClass, selectCalendarDay, loadJournalDay,
       openQuestDetail, openJournalQuest, prevMonth, nextMonth,
     };
@@ -1048,13 +1085,13 @@ createApp({
         <div v-if="celebrationPayload" class="celebration-card">
           <div class="celebration-confetti">🎉✨🏆⭐🔥</div>
           <p class="celebration-msg">{{ celebrationPayload.message || 'Отличная работа!' }}</p>
-          <p class="celebration-xp">+{{ celebrationPayload.xp_gained || 0 }} ОП</p>
+          <p class="celebration-xp">+{{ celebrationPayload.xp_gained || 0 }} XP</p>
           <p v-if="celebrationPayload.stat_label" class="celebration-stat">{{ celebrationPayload.stat_label }}</p>
           <p v-if="celebrationPayload.level_up" class="celebration-levelup">
             🎉 Новый уровень {{ celebrationPayload.level_up.stat_label }}: {{ celebrationPayload.level_up.new }}!
           </p>
         </div>
-        <span v-if="celebrationFx.includes('xp_burst')" class="fx fx-xp">+{{ celebrationPayload?.xp_gained || '' }} ОП</span>
+        <span v-if="celebrationFx.includes('xp_burst')" class="fx fx-xp">+{{ celebrationPayload?.xp_gained || '' }} XP</span>
         <span v-if="celebrationFx.includes('coin_spin')" class="fx fx-coin">🪙</span>
         <span v-if="celebrationFx.includes('streak_pulse')" class="fx fx-streak">🔥</span>
         <span v-if="celebrationFx.includes('chest_drop')" class="fx fx-chest">📦</span>
@@ -1080,7 +1117,7 @@ createApp({
             <div class="hero-title">«{{ displayProfile.title }}»</div>
             <div class="hero-level-hint">Среднее уровней ваших характеристик</div>
             <div class="xp-bar-wrap">
-              <div class="xp-label"><span>⭐ ОП</span><span>{{ fmtNum(displayProfile.xp_in_level) }} / {{ fmtNum(displayProfile.xp_needed) }}</span></div>
+              <div class="xp-label"><span>⭐ XP</span><span>{{ fmtNum(displayProfile.xp_in_level) }} / {{ fmtNum(displayProfile.xp_needed) }}</span></div>
               <div class="xp-bar"><div class="xp-fill" :style="{width: xpPercent+'%'}"></div></div>
             </div>
             <div class="streak">🔥 СЕРИЯ ДЕЙСТВИЙ · {{ displayProfile.action_streak }} дней</div>
@@ -1092,7 +1129,7 @@ createApp({
 
           <div v-if="displayProfile.season_v2" class="season-banner season-v2">
             🏆 {{ displayProfile.season_v2.title }}<br>
-            ⚡ ОП сезона: <strong>{{ fmtNum(displayProfile.season_v2.season_xp) }}</strong>
+            ⚡ XP сезона: <strong>{{ fmtNum(displayProfile.season_v2.season_xp) }}</strong>
             · 🥇 {{ displayProfile.season_v2.league_tier }}
             · {{ displayProfile.season_v2.days_left }} дн. до конца
           </div>
@@ -1131,7 +1168,7 @@ createApp({
 
           <div v-if="displayProfile.league" class="league-mini card" @click="switchTab('league')">
             🥇 {{ displayProfile.league.tier }} · Место #{{ displayProfile.league.rank }}
-            · {{ displayProfile.league.weekly_xp }} ОП / неделя
+            · {{ displayProfile.league.weekly_xp }} XP / неделя
             <span v-if="displayProfile.league.in_promotion_zone" class="zone-badge promote">↑</span>
             <span v-else-if="displayProfile.league.in_demotion_zone" class="zone-badge demote">↓</span>
           </div>
@@ -1228,7 +1265,7 @@ createApp({
                 <div class="quest-check">{{ q.status==='done' ? '✓' : '' }}</div>
                 <div class="quest-body">
                   <div class="quest-title">{{ q.title }}<span v-if="q.progress_notes" class="quest-has-notes" title="Есть заметки"> 📝</span></div>
-                  <div class="quest-xp">+{{ q.xp_reward }} ОП · {{ statLabel(q.stat_key) }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
+                  <div class="quest-xp">+{{ q.xp_reward }} XP · {{ statLabel(q.stat_key) }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
                 </div>
                 <div v-if="q.status==='pending'" class="quest-actions" @click.stop>
                   <button type="button" class="edit-btn edit-btn-sm" @click="openEditQuest(q)">✏️</button>
@@ -1250,7 +1287,7 @@ createApp({
               <div class="league-tier">{{ leagueData.tier }}</div>
               <div class="league-meta">
                 Место <strong>#{{ leagueData.rank }}</strong> / {{ leagueData.member_count }}
-                · {{ leagueData.weekly_xp }} ОП
+                · {{ leagueData.weekly_xp }} XP
                 · {{ leagueData.days_left }} дн.
               </div>
               <div class="league-zones">
@@ -1267,7 +1304,7 @@ createApp({
               >
                 <span class="league-rank">#{{ m.rank }}</span>
                 <span class="league-name">{{ m.display_name }}</span>
-                <span class="league-xp">{{ m.weekly_xp }} ОП</span>
+                <span class="league-xp">{{ m.weekly_xp }} XP</span>
               </div>
             </div>
           </template>
@@ -1297,7 +1334,7 @@ createApp({
                 >
                   <span class="growth-node-icon">{{ growthNodeIcon(node) }}</span>
                   <span class="growth-node-title">{{ node.title }}</span>
-                  <span class="growth-node-xp">+{{ node.xp_reward }} ОП</span>
+                  <span class="growth-node-xp">+{{ node.xp_reward }} XP</span>
                 </button>
               </div>
             </div>
@@ -1328,7 +1365,7 @@ createApp({
               <div v-if="clanData.sprint" class="sprint-bar-wrap">
                 <div class="chest-victory-row">
                   <span>Речной спринт</span>
-                  <span>{{ clanData.sprint.total_xp }}/{{ clanData.sprint.goal_xp || '—' }} ОП</span>
+                  <span>{{ clanData.sprint.total_xp }}/{{ clanData.sprint.goal_xp || '—' }} XP</span>
                 </div>
                 <div class="progress-mini"><div class="progress-mini-fill gold" :style="{width: clanData.sprint.progress_pct+'%'}"></div></div>
               </div>
@@ -1387,15 +1424,18 @@ createApp({
                 <span class="stat-level">УР. {{ displayProfile.stats_levels?.[key] ?? 0 }}</span>
               </div>
               <div class="name">{{ (statLabel(key) || key).replace(/^\\S+\\s/, '') }}</div>
-              <div class="xp">{{ fmtNum(displayProfile.stats_xp?.[key] ?? 0) }} ОП</div>
-              <div class="stat-rule">{{ statRule(key) }}</div>
+              <div class="xp">{{ fmtNum(displayProfile.stats_xp?.[key] ?? 0) }} XP</div>
+              <div class="progress-mini goal-progress" style="margin-top:8px">
+                <div class="progress-mini-fill" :style="{width: pct(statProgress(key).current, statProgress(key).needed)+'%'}"></div>
+              </div>
+              <div class="stat-rule">{{ statProgress(key).current }} / {{ statProgress(key).needed }} XP · {{ statRule(key) }}</div>
             </div>
           </div>
           <p class="rule-text">
             <strong>Уровень героя</strong> = среднее уровней характеристик. Сейчас: {{ displayProfile.level }}.
           </p>
           <p class="rule-text">
-            <strong>ОП квестов</strong> — за выполнение задач. Планирование не даёт ОП.
+            <strong>XP квестов</strong> копится по каждой характеристике отдельно. Цели вроде «10 000 подписчиков» — в разделе «Цели».
           </p>
         </section>
 
@@ -1454,7 +1494,7 @@ createApp({
               <div class="quest-check">{{ q.status==='done' ? '✓' : q.status==='failed' ? '✗' : '' }}</div>
               <div class="quest-body">
                 <div class="quest-title">{{ q.title }}<span v-if="q.progress_notes" class="quest-has-notes"> 📝</span></div>
-                <div class="quest-xp">+{{ q.xp_reward }} ОП · {{ statLabel(q.stat_key) }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
+                <div class="quest-xp">+{{ q.xp_reward }} XP · {{ statLabel(q.stat_key) }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
               </div>
               <div v-if="q.status==='pending'" class="quest-actions" @click.stop>
                 <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="removeQuest(q, $event, 'journal')">🗑</button>
@@ -1469,45 +1509,20 @@ createApp({
             <div class="section-head">🎯 Цели</div>
             <button type="button" class="edit-btn" @click="openGoalAdd">+ Цель</button>
           </div>
-
-          <div class="goal-block">
-            <div class="goal-block-head">
-              <h4>🏠 Дом родителям</h4>
-              <button type="button" class="edit-btn edit-btn-sm" @click="openGoalEdit">✏️</button>
-            </div>
-            <p class="goal-text">Накоплено: {{ fmtMoney(profile.kpi.home_savings) }} · Цель: {{ profile.kpi.home_goal ? fmtMoney(profile.kpi.home_goal) : '—' }}</p>
-            <div v-if="profile.kpi.home_goal" class="progress-mini goal-progress">
-              <div class="progress-mini-fill" :style="{width: pct(profile.kpi.home_savings, profile.kpi.home_goal)+'%'}"></div>
-            </div>
+          <p class="rule-text" style="margin-bottom:16px">Жизненные цели — подписчики, накопления, вес. Не влияют на уровень, только показывают прогресс.</p>
+          <div v-if="!profile.goals?.length" class="empty-state">
+            <p>Добавь первую цель — например «10 000 подписчиков» или «накопить на дом».</p>
           </div>
-
-          <div class="goal-block">
-            <div class="goal-block-head">
-              <h4>🚘 Dream Car — Mercedes CLS / GLE 63</h4>
-              <button type="button" class="edit-btn edit-btn-sm" @click="openGoalEdit">✏️</button>
-            </div>
-            <p class="goal-text">Накоплено: {{ fmtMoney(profile.kpi.car_savings) }} · Цель: {{ profile.kpi.car_goal ? fmtMoney(profile.kpi.car_goal) : '—' }}</p>
-            <div v-if="profile.kpi.car_goal" class="progress-mini goal-progress">
-              <div class="progress-mini-fill" :style="{width: pct(profile.kpi.car_savings, profile.kpi.car_goal)+'%'}"></div>
-            </div>
-          </div>
-
-          <div class="goal-block">
-            <h4>💪 Форма</h4>
-            <p class="goal-text">Вес: {{ profile.kpi.weight_kg }} кг → {{ profile.kpi.weight_goal_kg }} кг</p>
-            <div class="progress-mini goal-progress">
-              <div class="progress-mini-fill" :style="{width: pct(profile.kpi.weight_kg, profile.kpi.weight_goal_kg)+'%'}"></div>
-            </div>
-          </div>
-
-          <div v-if="profile.goals?.length" class="section-head" style="margin-top:20px">📌 Свои цели</div>
           <div v-for="g in profile.goals" :key="g.id || g.title" class="goal-block">
-            <h4>{{ g.title }}</h4>
+            <div class="goal-block-head">
+              <h4>{{ g.emoji || '🎯' }} {{ g.title }}</h4>
+              <div>
+                <button type="button" class="edit-btn edit-btn-sm" @click="openGoalEditGoal(g)">✏️</button>
+                <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="deleteGoalAction(g)">🗑</button>
+              </div>
+            </div>
             <p v-if="g.description" class="goal-text">{{ g.description }}</p>
-            <p class="goal-text">
-              Прогресс: {{ fmtNum(g.current_value) }}
-              <span v-if="g.target_value"> / {{ fmtNum(g.target_value) }}</span>
-            </p>
+            <p class="goal-text">Прогресс: {{ goalProgressLabel(g) }}</p>
             <div v-if="g.target_value" class="progress-mini goal-progress">
               <div class="progress-mini-fill" :style="{width: pct(g.current_value, g.target_value)+'%'}"></div>
             </div>
@@ -1531,7 +1546,7 @@ createApp({
       <div v-if="showReflect" class="modal-overlay" @click.self="showReflect=false">
         <div class="modal modal-work">
           <h3>📋 {{ activeQuest?.title }}</h3>
-          <p class="modal-sub">+{{ activeQuest?.xp_reward }} ОП · {{ statLabel(activeQuest?.stat_key) }}</p>
+          <p class="modal-sub">+{{ activeQuest?.xp_reward }} XP · {{ statLabel(activeQuest?.stat_key) }}</p>
 
           <div class="field field-notes">
             <label>Заметки в процессе</label>
@@ -1551,7 +1566,7 @@ createApp({
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="showReflect=false">Закрыть</button>
-            <button type="button" class="btn btn-primary" @click="submitQuest">☑ Выполнено +{{ activeQuest?.xp_reward }} ОП</button>
+            <button type="button" class="btn btn-primary" @click="submitQuest">☑ Выполнено +{{ activeQuest?.xp_reward }} XP</button>
           </div>
         </div>
       </div>
@@ -1606,7 +1621,7 @@ createApp({
             </select>
           </div>
           <div class="field">
-            <label>Награда ОП</label>
+            <label>Награда XP</label>
             <input v-model.number="questForm.xp_reward" type="number" min="1">
           </div>
           <div class="field">
@@ -1636,7 +1651,7 @@ createApp({
             </select>
           </div>
           <div class="field">
-            <label>Награда ОП</label>
+            <label>Награда XP</label>
             <input v-model.number="questForm.xp_reward" type="number" min="1">
           </div>
           <div class="field">
@@ -1651,60 +1666,41 @@ createApp({
         </div>
       </div>
 
-      <!-- Savings Edit -->
-      <div v-if="showGoalEdit" class="modal-overlay" @click.self="showGoalEdit=false">
-        <div class="modal">
-          <h3>🏠 Накопления</h3>
-          <div class="form-grid">
-            <div class="field">
-              <label>Дом — накоплено (₽)</label>
-              <input v-model.number="savingsForm.home_savings" type="number">
-            </div>
-            <div class="field">
-              <label>Дом — цель (₽)</label>
-              <input v-model.number="savingsForm.home_goal" type="number">
-            </div>
-            <div class="field">
-              <label>Машина — накоплено (₽)</label>
-              <input v-model.number="savingsForm.car_savings" type="number">
-            </div>
-            <div class="field">
-              <label>Машина — цель (₽)</label>
-              <input v-model.number="savingsForm.car_goal" type="number">
-            </div>
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" @click="showGoalEdit=false">Отмена</button>
-            <button type="button" class="btn btn-primary" @click="saveSavings">Сохранить</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Add Goal -->
+      <!-- Goal add/edit -->
       <div v-if="showGoalAdd" class="modal-overlay" @click.self="showGoalAdd=false">
         <div class="modal">
-          <h3>➕ Новая цель</h3>
-          <div class="field">
-            <label>Название</label>
-            <input v-model="goalForm.title" type="text" placeholder="Моя цель">
+          <h3>{{ editingGoalId ? '✏️ Редактировать цель' : '➕ Новая цель' }}</h3>
+          <div class="form-grid">
+            <div class="field">
+              <label>Эмодзи</label>
+              <input v-model="goalForm.emoji" maxlength="4" class="stat-emoji-input">
+            </div>
+            <div class="field">
+              <label>Название</label>
+              <input v-model="goalForm.title" type="text" placeholder="10 000 подписчиков">
+            </div>
           </div>
           <div class="field">
             <label>Описание</label>
-            <textarea v-model="goalForm.description" placeholder="Детали..."></textarea>
+            <textarea v-model="goalForm.description" placeholder="Зачем эта цель..."></textarea>
+          </div>
+          <div class="field">
+            <label>Единица (необяз.)</label>
+            <input v-model="goalForm.metric_unit" type="text" placeholder="подп., ₽, кг">
           </div>
           <div class="form-grid">
             <div class="field">
-              <label>Текущее значение</label>
+              <label>Сейчас</label>
               <input v-model.number="goalForm.current_value" type="number">
             </div>
             <div class="field">
-              <label>Целевое значение</label>
+              <label>Цель</label>
               <input v-model.number="goalForm.target_value" type="number">
             </div>
           </div>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="showGoalAdd=false">Отмена</button>
-            <button type="button" class="btn btn-primary" @click="saveNewGoal">Добавить</button>
+            <button type="button" class="btn btn-primary" @click="saveGoalForm">{{ editingGoalId ? 'Сохранить' : 'Добавить' }}</button>
           </div>
         </div>
       </div>
@@ -1748,7 +1744,7 @@ createApp({
       <div v-if="showGrowthNode && activeGrowthNode" class="modal-overlay" @click.self="showGrowthNode=false">
         <div class="modal">
           <h3>{{ growthNodeIcon(activeGrowthNode) }} {{ activeGrowthNode.title }}</h3>
-          <p class="modal-sub">+{{ activeGrowthNode.xp_reward }} ОП · шаг пути роста</p>
+          <p class="modal-sub">+{{ activeGrowthNode.xp_reward }} XP · шаг пути роста</p>
           <div class="field">
             <label>Итог / рефлексия (мин. 10 символов)</label>
             <textarea v-model="growthReflection.summary" rows="4" placeholder="Что сделал по этому шагу пути?"></textarea>
@@ -1807,20 +1803,15 @@ createApp({
           </div>
           <div v-else-if="onboardingStep==='stats'" class="onboarding-step">
             <h2>📊 Характеристики</h2>
-            <p class="modal-sub">Выбери, что хочешь развивать. Можно добавить свои и настроить правила уровней.</p>
+            <p class="modal-sub">Выбери области жизни. Уровень каждой растёт от XP за квесты по ней.</p>
             <div class="onboarding-presets">
               <button v-for="p in statPresets" :key="p.key" type="button" class="btn btn-sm btn-secondary" @click="addOnboardingStat(p)">+ {{ p.emoji }} {{ p.label }}</button>
             </div>
             <div v-for="(s, idx) in onboardingStats" :key="idx" class="onboarding-stat-row card">
               <input v-model="s.emoji" class="stat-emoji-input" maxlength="4">
               <input v-model="s.label" placeholder="Название" class="stat-label-input">
-              <select v-model="s.rule_type">
-                <option value="every_n">Каждые N = 1 ур.</option>
-                <option value="direct">1 = 1 ур.</option>
-                <option value="streak_week">7 дней подряд</option>
-              </select>
-              <input v-model.number="s.rule_value" type="number" min="1" class="stat-rule-input" placeholder="N">
-              <input v-model="s.rule_label" placeholder="Описание правила" class="stat-rule-label">
+              <input v-model.number="s.xp_per_level" type="number" min="100" step="100" class="stat-rule-input" title="XP за уровень">
+              <span class="stat-rule-hint">XP/ур.</span>
               <button type="button" class="edit-btn edit-btn-danger" @click="removeOnboardingStat(idx)">✕</button>
             </div>
             <button type="button" class="btn btn-secondary btn-sm" @click="addOnboardingStat()">+ Своя характеристика</button>
@@ -1845,18 +1836,16 @@ createApp({
       <!-- Stat config edit -->
       <div v-if="showStatEdit" class="modal-overlay" @click.self="showStatEdit=false">
         <div class="modal">
-          <h3>✏️ Настройка характеристик</h3>
+          <h3>✏️ Характеристики</h3>
+          <p class="modal-sub">Уровень = XP по этой характеристике ÷ «XP за уровень».</p>
           <div v-for="(s, idx) in statEditForm" :key="idx" class="onboarding-stat-row card">
             <input v-model="s.emoji" class="stat-emoji-input" maxlength="4">
-            <input v-model="s.label" class="stat-label-input">
-            <select v-model="s.rule_type">
-              <option value="every_n">Каждые N</option>
-              <option value="direct">1 = 1</option>
-              <option value="streak_week">7 дней</option>
-            </select>
-            <input v-model.number="s.rule_value" type="number" min="1" class="stat-rule-input">
-            <input v-model="s.rule_label" class="stat-rule-label" placeholder="Правило">
+            <input v-model="s.label" class="stat-label-input" placeholder="Название">
+            <input v-model.number="s.xp_per_level" type="number" min="100" step="100" class="stat-rule-input" placeholder="1000">
+            <span class="stat-rule-hint">XP/ур.</span>
+            <button type="button" class="edit-btn edit-btn-danger" @click="removeStatRow(idx)">✕</button>
           </div>
+          <button type="button" class="btn btn-secondary btn-sm" @click="addStatRow">+ Добавить</button>
           <div class="modal-actions">
             <button type="button" class="btn btn-secondary" @click="showStatEdit=false">Отмена</button>
             <button type="button" class="btn btn-primary" @click="saveStatEdit">Сохранить</button>
