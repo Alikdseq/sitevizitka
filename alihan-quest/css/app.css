@@ -839,6 +839,7 @@ body.theme-forest { --bg: #071510; --card: #0f2419; --gold: #4ade80; }
 .stat-rule-input { width: 56px; }
 .stat-label-input, .stat-rule-label { min-width: 0; }
 .progress-summary { padding: 14px; margin-bottom: 12px; }
+.progress-subhead { font-size: 0.95rem; margin-top: 12px; margin-bottom: 8px; opacity: 0.9; }
 .progress-summary-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.9rem; }
 .progress-metric { padding: 12px 14px; margin-bottom: 8px; }
 .progress-metric-head { font-weight: 700; margin-bottom: 6px; }

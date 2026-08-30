@@ -688,7 +688,7 @@ createApp({
     }
 
     async function afterQuestDeleted(context) {
-      if (context === 'journal') {
+      if (context === 'progress' || context === 'journal') {
         if (selectedDate.value) await loadJournalDay(selectedDate.value);
         await loadCalendar();
         const today = new Date().toISOString().slice(0, 10);
@@ -700,7 +700,7 @@ createApp({
       }
       const q = await QuestAPI.getTodayQuests();
       if (q.online && q.data) questPack.value = q.data;
-      if (tab.value === 'journal') await loadCalendar();
+      if (tab.value === 'progress') await loadCalendar();
     }
 
     function resetSwipe() {
@@ -784,7 +784,7 @@ createApp({
       handleQuestCompleteCelebration(result);
       await refresh();
       if (selectedDate.value) await loadJournalDay(selectedDate.value);
-      if (tab.value === 'journal') await loadCalendar();
+      if (tab.value === 'progress') await loadCalendar();
       if (window.Telegram?.WebApp?.HapticFeedback) {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
       }
@@ -964,13 +964,14 @@ createApp({
     }
 
     watch(tab, async (name) => {
-      if (name === 'journal') await loadCalendar();
       if (name === 'quests' || name === 'home') await refresh();
       if (name === 'league') await loadLeague();
       if (name === 'growth') await loadGrowth();
       if (name === 'clan') await loadClan();
       if (name === 'shop') await loadShop();
-      if (name === 'progress') await loadAnalytics();
+      if (name === 'progress') {
+        await Promise.all([loadAnalytics(), loadCalendar()]);
+      }
     });
 
     watch(
@@ -1392,8 +1393,53 @@ createApp({
 
         <!-- PROGRESS -->
         <section v-else-if="tab==='progress'" class="screen">
-          <div class="section-head">📈 Прогресс и аналитика</div>
-          <div v-if="!analyticsData" class="empty-state"><p>Загрузка...</p></div>
+          <div class="section-head">📈 Прогресс</div>
+
+          <div class="section-head progress-subhead">📅 Календарь квестов</div>
+          <div class="cal-nav">
+            <button type="button" class="edit-btn" @click="prevMonth">←</button>
+            <span class="cal-nav-title">{{ calendarTitle }}</span>
+            <button type="button" class="edit-btn" @click="nextMonth">→</button>
+          </div>
+          <div class="cal-weekdays">
+            <span v-for="d in ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']" :key="d">{{ d }}</span>
+          </div>
+          <div class="cal-grid">
+            <template v-for="cell in calendarCells" :key="cell.key">
+              <div v-if="cell.empty" class="cal-day cal-day-empty"></div>
+              <button v-else type="button"
+                      :class="calDayClass(cell)"
+                      @click="selectCalendarDay(cell)">
+                <span class="cal-day-num">{{ cell.day }}</span>
+                <span v-if="cell.data?.total" class="cal-day-badge">{{ cell.data.done }}/{{ cell.data.total }}</span>
+              </button>
+            </template>
+          </div>
+          <div v-if="selectedDate" class="journal-day-panel">
+            <div class="section-head">📋 {{ selectedDate }}</div>
+            <div v-if="journalQuests.main_mission" class="quest-mission">
+              🔥 {{ journalQuests.main_mission }}
+            </div>
+            <div v-if="!journalQuests.quests.length" class="empty-state">
+              <p>Нет квестов на этот день</p>
+            </div>
+            <div v-for="q in journalQuests.quests" :key="q.id"
+                 class="quest-item"
+                 :class="{done: q.status==='done', failed: q.status==='failed'}"
+                 @click="openJournalQuest(q)">
+              <div class="quest-check">{{ q.status==='done' ? '✓' : q.status==='failed' ? '✗' : '' }}</div>
+              <div class="quest-body">
+                <div class="quest-title">{{ q.title }}<span v-if="q.progress_notes" class="quest-has-notes"> 📝</span></div>
+                <div class="quest-xp">+{{ q.xp_reward }} ОП · {{ statLabel(q.stat_key) }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
+              </div>
+              <div v-if="q.status==='pending'" class="quest-actions" @click.stop>
+                <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="removeQuest(q, $event, 'progress')">🗑</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="section-head progress-subhead" style="margin-top:20px">📊 Аналитика</div>
+          <div v-if="!analyticsData" class="empty-state"><p>Загрузка аналитики...</p></div>
           <template v-else>
             <div class="card progress-summary">
               <div class="progress-summary-row">
@@ -1411,7 +1457,7 @@ createApp({
               </div>
               <p v-if="m.insight" class="progress-insight">{{ m.insight }}</p>
             </div>
-            <div v-if="analyticsData.xp_timeline?.length" class="section-head" style="margin-top:16px">⚡ История ОП</div>
+            <div v-if="analyticsData.xp_timeline?.length" class="section-head progress-subhead">⚡ История ОП</div>
             <div v-for="(ev, i) in analyticsData.xp_timeline.slice(0, 15)" :key="i" class="xp-timeline-row">
               <span class="xp-timeline-amt">+{{ ev.amount }}</span>
               <span class="xp-timeline-reason">{{ ev.reason }}</span>
@@ -1471,55 +1517,6 @@ createApp({
           </div>
         </section>
 
-        <!-- JOURNAL -->
-        <section v-else-if="tab==='journal'" class="screen">
-          <div class="section-head">📅 Журнал</div>
-
-          <div class="cal-nav">
-            <button type="button" class="edit-btn" @click="prevMonth">←</button>
-            <span class="cal-nav-title">{{ calendarTitle }}</span>
-            <button type="button" class="edit-btn" @click="nextMonth">→</button>
-          </div>
-
-          <div class="cal-weekdays">
-            <span v-for="d in ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']" :key="d">{{ d }}</span>
-          </div>
-
-          <div class="cal-grid">
-            <template v-for="cell in calendarCells" :key="cell.key">
-              <div v-if="cell.empty" class="cal-day cal-day-empty"></div>
-              <button v-else type="button"
-                      :class="calDayClass(cell)"
-                      @click="selectCalendarDay(cell)">
-                <span class="cal-day-num">{{ cell.day }}</span>
-                <span v-if="cell.data?.total" class="cal-day-badge">{{ cell.data.done }}/{{ cell.data.total }}</span>
-              </button>
-            </template>
-          </div>
-
-          <div v-if="selectedDate" class="journal-day-panel">
-            <div class="section-head">📋 {{ selectedDate }}</div>
-            <div v-if="journalQuests.main_mission" class="quest-mission">
-              🔥 {{ journalQuests.main_mission }}
-            </div>
-            <div v-if="!journalQuests.quests.length" class="empty-state">
-              <p>Нет квестов на этот день</p>
-            </div>
-            <div v-for="q in journalQuests.quests" :key="q.id"
-                 class="quest-item"
-                 :class="{done: q.status==='done', failed: q.status==='failed'}"
-                 @click="openJournalQuest(q)">
-              <div class="quest-check">{{ q.status==='done' ? '✓' : q.status==='failed' ? '✗' : '' }}</div>
-              <div class="quest-body">
-                <div class="quest-title">{{ q.title }}<span v-if="q.progress_notes" class="quest-has-notes"> 📝</span></div>
-                <div class="quest-xp">+{{ q.xp_reward }} XP · {{ STAT_LABELS[q.stat_key] || q.stat_key }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
-              </div>
-              <div v-if="q.status==='pending'" class="quest-actions" @click.stop>
-                <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="removeQuest(q, $event, 'journal')">🗑</button>
-              </div>
-            </div>
-          </div>
-        </section>
       </main>
 
       <nav class="bottom-nav bottom-nav-scroll">
@@ -1532,7 +1529,6 @@ createApp({
         <button type="button" class="nav-item" :class="{active: tab==='shop'}" @click="switchTab('shop')"><span class="ico">🛒</span>Магазин</button>
         <button type="button" class="nav-item" :class="{active: tab==='stats'}" @click="switchTab('stats')"><span class="ico">📊</span>Статы</button>
         <button type="button" class="nav-item" :class="{active: tab==='goals'}" @click="switchTab('goals')"><span class="ico">🎯</span>Цели</button>
-        <button type="button" class="nav-item" :class="{active: tab==='journal'}" @click="switchTab('journal')"><span class="ico">📅</span>Журнал</button>
       </nav>
 
       <!-- Work on quest / Complete -->
