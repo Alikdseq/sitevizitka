@@ -1102,7 +1102,7 @@ createApp({
         🔐 Не удалось войти через Telegram. Закрой Mini App полностью и открой снова через @game_alikhan_bot.
       </div>
       <div v-else-if="!apiOnline" class="offline-banner">
-        📡 Нет связи с сервером — проверь, что Django и cloudflared запущены.
+        📡 Нет связи с сервером ({{ QuestAPI.getApiBase() || 'API не задан' }}). Запусти start-alihan-quest.bat и не закрывай окно Tunnel.
       </div>
       <div v-else-if="syncInfo" class="sync-banner">
         🗄 БД · player #{{ syncInfo.player_id }} · {{ syncInfo.quest_count }} задач ({{ syncInfo.manual_count || 0 }} вручную) · бот видит то же
