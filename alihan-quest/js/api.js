@@ -164,6 +164,10 @@ function normalizeProfile(data) {
     stats_levels,
     goals: Array.isArray(src.goals) ? src.goals : [],
     season: src.season ?? DEFAULT_PROFILE.season,
+    gamification: src.gamification || null,
+    season_v2: src.season_v2 || null,
+    league: src.league || null,
+    clan: src.clan || null,
   };
 }
 
@@ -323,5 +327,92 @@ window.QuestAPI = {
     return await apiFetch(`/quests/${questId}/complete/`, {
       method: 'POST', body: JSON.stringify({ reflection }),
     });
+  },
+
+  async getChests() {
+    return await apiFetch('/gamification/chests/');
+  },
+
+  async openChest(chestId) {
+    return await apiFetch(`/gamification/chests/${chestId}/open/`, { method: 'POST', body: '{}' });
+  },
+
+  async claimMorningChest() {
+    return await apiFetch('/gamification/daily/morning/', { method: 'POST', body: '{}' });
+  },
+
+  async claimEveningChest(reflectionSummary) {
+    return await apiFetch('/gamification/daily/evening/', {
+      method: 'POST',
+      body: JSON.stringify({ reflection_summary: reflectionSummary }),
+    });
+  },
+
+  async getLeague() {
+    return await apiFetch('/gamification/league/');
+  },
+
+  async getGrowthPaths() {
+    return await apiFetch('/gamification/growth/paths/');
+  },
+
+  async getGrowthPath(statKey) {
+    return await apiFetch(`/gamification/growth/paths/${statKey}/`);
+  },
+
+  async startGrowthNode(nodeId) {
+    return await apiFetch(`/gamification/growth/nodes/${nodeId}/start/`, { method: 'POST', body: '{}' });
+  },
+
+  async completeGrowthNode(nodeId, reflection) {
+    return await apiFetch(`/gamification/growth/nodes/${nodeId}/complete/`, {
+      method: 'POST',
+      body: JSON.stringify({ reflection: reflection || {} }),
+    });
+  },
+
+  async getClan() {
+    return await apiFetch('/clans/me/');
+  },
+
+  async createClan(name, statFocus = '') {
+    return await apiFetch('/clans/', {
+      method: 'POST',
+      body: JSON.stringify({ name, stat_focus: statFocus }),
+    });
+  },
+
+  async joinClan(inviteCode) {
+    return await apiFetch('/clans/join/', {
+      method: 'POST',
+      body: JSON.stringify({ invite_code: inviteCode }),
+    });
+  },
+
+  async leaveClan() {
+    return await apiFetch('/clans/leave/', { method: 'POST', body: '{}' });
+  },
+
+  async getShopThemes() {
+    return await apiFetch('/gamification/shop/themes/');
+  },
+
+  async activateTheme(code) {
+    return await apiFetch(`/gamification/shop/themes/${code}/activate/`, { method: 'POST', body: '{}' });
+  },
+
+  async getSubscription() {
+    return await apiFetch('/gamification/subscription/');
+  },
+
+  async checkoutPro(planCode = 'quest_pro_monthly') {
+    return await apiFetch('/gamification/subscription/checkout/', {
+      method: 'POST',
+      body: JSON.stringify({ plan_code: planCode }),
+    });
+  },
+
+  async useStreakGrace() {
+    return await apiFetch('/gamification/streak/grace/', { method: 'POST', body: '{}' });
   },
 };

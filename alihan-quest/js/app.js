@@ -39,6 +39,19 @@ const MONTH_NAMES = [
   'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
 ];
 
+const THEME_CLASSES = {
+  default: '',
+  royal: 'theme-royal',
+  neon: 'theme-neon',
+  forest: 'theme-forest',
+};
+
+function applyThemeCode(code) {
+  Object.values(THEME_CLASSES).forEach((c) => { if (c) document.body.classList.remove(c); });
+  const cls = THEME_CLASSES[code] || '';
+  if (cls) document.body.classList.add(cls);
+}
+
 function setupTelegramViewport() {
   const tg = window.Telegram?.WebApp;
   if (!tg) return;
@@ -98,6 +111,22 @@ createApp({
     const showGoalEdit = ref(false);
     const showGoalAdd = ref(false);
     const showQuestDetail = ref(false);
+    const showChestLoot = ref(false);
+    const chestLoot = ref(null);
+    const showEveningChest = ref(false);
+    const eveningReflection = ref('');
+    const celebrationFx = ref([]);
+
+    const leagueData = ref(null);
+    const growthPath = ref(null);
+    const showGrowthNode = ref(false);
+    const activeGrowthNode = ref(null);
+    const growthReflection = ref({ summary: '' });
+
+    const clanData = ref(null);
+    const clanForm = ref({ name: '', invite_code: '', stat_focus: 'discipline' });
+    const shopThemes = ref([]);
+    const subscription = ref(null);
 
     const activeQuest = ref(null);
     const detailQuest = ref(null);
@@ -138,6 +167,18 @@ createApp({
 
     const pendingCount = computed(() =>
       questPack.value?.quests?.filter((q) => q.status === 'pending').length || 0
+    );
+
+    const chestSummary = computed(() => displayProfile.value?.gamification?.chests || null);
+
+    const victoryProgressPct = computed(() => {
+      const vp = chestSummary.value?.victory_progress;
+      if (!vp?.required) return 0;
+      return Math.min(100, Math.round((vp.completed / vp.required) * 100));
+    });
+
+    const readyChests = computed(() =>
+      (chestSummary.value?.items || []).filter((c) => c.status === 'ready')
     );
 
     const statKeys = computed(() => QuestAPI.STAT_KEYS || []);
@@ -182,6 +223,231 @@ createApp({
     function showToast(msg, ms = 2500) {
       toast.value = msg;
       setTimeout(() => { toast.value = ''; }, ms);
+    }
+
+    function playCelebration(animations) {
+      if (!Array.isArray(animations) || !animations.length) return;
+      celebrationFx.value = animations;
+      setTimeout(() => { celebrationFx.value = []; }, 1600);
+      const tg = window.Telegram?.WebApp?.HapticFeedback;
+      if (!tg) return;
+      if (animations.includes('level_up') || animations.includes('chest_drop')) {
+        tg.notificationOccurred('success');
+      } else if (animations.includes('xp_burst')) {
+        tg.impactOccurred('light');
+      }
+    }
+
+    function showChestLootModal(loot, title = 'Сундук открыт!') {
+      chestLoot.value = { title, loot };
+      showChestLoot.value = true;
+    }
+
+    async function openReadyChest(chest) {
+      if (!chest?.id) return;
+      try {
+        const result = await QuestAPI.openChest(chest.id);
+        playCelebration(result?.celebration?.animations || ['chest_drop']);
+        showChestLootModal(result?.loot, chest.title || 'Сундук');
+        await refresh();
+      } catch {
+        showToast('Не удалось открыть сундук');
+      }
+    }
+
+    async function claimMorning() {
+      try {
+        const result = await QuestAPI.claimMorningChest();
+        if (result?.error) {
+          showToast(result.error === 'already_claimed' ? 'Утренний сундук уже получен' : 'Ошибка');
+          return;
+        }
+        playCelebration(result?.celebration?.animations || ['chest_drop']);
+        showChestLootModal(result?.loot, '🌅 Morning Chest');
+        await refresh();
+      } catch {
+        showToast('Нет связи с сервером');
+      }
+    }
+
+    function openEveningChestModal() {
+      eveningReflection.value = '';
+      showEveningChest.value = true;
+    }
+
+    async function submitEveningChest() {
+      const text = eveningReflection.value.trim();
+      if (text.length < 10) {
+        showToast('Напиши итог дня (мин. 10 символов)');
+        return;
+      }
+      try {
+        const result = await QuestAPI.claimEveningChest(text);
+        if (result?.error) {
+          showToast(result.error === 'already_claimed' ? 'Вечерний сундук уже получен' : 'Нужна рефлексия');
+          return;
+        }
+        showEveningChest.value = false;
+        playCelebration(result?.celebration?.animations || ['chest_drop']);
+        showChestLootModal(result?.loot, '🌙 Evening Chest');
+        await refresh();
+      } catch {
+        showToast('Нет связи с сервером');
+      }
+    }
+
+    function handleQuestCompleteCelebration(result) {
+      const cel = result?.celebration;
+      playCelebration(cel?.animations || ['xp_burst']);
+      let msg = `+${result.xp_gained} XP ⚡`;
+      if (result.coins_gained) msg += ` · +${result.coins_gained} 🪙`;
+      if (cel?.chest_earned) msg += ' · 🏆 Victory Chest!';
+      showToast(msg);
+    }
+
+    async function loadLeague() {
+      try {
+        leagueData.value = await QuestAPI.getLeague();
+      } catch {
+        leagueData.value = displayProfile.value?.league || null;
+      }
+    }
+
+    async function loadGrowth() {
+      try {
+        growthPath.value = await QuestAPI.getGrowthPath('discipline');
+      } catch {
+        growthPath.value = null;
+      }
+    }
+
+    async function loadClan() {
+      try {
+        const data = await QuestAPI.getClan();
+        clanData.value = data?.clan || null;
+      } catch {
+        clanData.value = displayProfile.value?.clan || null;
+      }
+    }
+
+    async function loadShop() {
+      try {
+        const [themes, sub] = await Promise.all([
+          QuestAPI.getShopThemes(),
+          QuestAPI.getSubscription(),
+        ]);
+        shopThemes.value = themes?.themes || [];
+        subscription.value = sub;
+      } catch {
+        shopThemes.value = [];
+      }
+    }
+
+    async function createClanAction() {
+      if (!clanForm.value.name?.trim()) {
+        showToast('Введите название клана');
+        return;
+      }
+      try {
+        const r = await QuestAPI.createClan(clanForm.value.name, clanForm.value.stat_focus);
+        if (r?.error) { showToast(r.error); return; }
+        clanData.value = r.clan;
+        showToast('Клан создан ✓');
+        await refresh();
+      } catch { showToast('Ошибка создания'); }
+    }
+
+    async function joinClanAction() {
+      try {
+        const r = await QuestAPI.joinClan(clanForm.value.invite_code);
+        if (r?.error) { showToast(r.error === 'invalid_code' ? 'Неверный код' : r.error); return; }
+        clanData.value = r.clan;
+        showToast('Вы в клане ✓');
+        await refresh();
+      } catch { showToast('Ошибка входа'); }
+    }
+
+    async function leaveClanAction() {
+      if (!window.confirm('Покинуть клан?')) return;
+      try {
+        await QuestAPI.leaveClan();
+        clanData.value = null;
+        showToast('Вы вышли из клана');
+        await refresh();
+      } catch { showToast('Ошибка'); }
+    }
+
+    async function activateThemeAction(code) {
+      try {
+        const r = await QuestAPI.activateTheme(code);
+        if (r?.error) { showToast(r.error === 'pro_required' ? 'Нужен Quest Pro' : r.error); return; }
+        applyThemeCode(code);
+        showToast('Тема применена ✓');
+        await refresh();
+        await loadShop();
+      } catch { showToast('Ошибка'); }
+    }
+
+    async function checkoutProAction() {
+      try {
+        const r = await QuestAPI.checkoutPro();
+        if (r?.confirmation_url) {
+          window.open(r.confirmation_url, '_blank');
+          showToast('Переход к оплате...');
+        } else {
+          showToast(r?.message || 'Оплата в stub-режиме — Pro через admin');
+        }
+      } catch { showToast('Ошибка checkout'); }
+    }
+
+    async function useGraceAction() {
+      try {
+        const r = await QuestAPI.useStreakGrace();
+        if (r?.error) { showToast('Grace уже использован'); return; }
+        showToast('Streak grace применён ✓');
+        await refresh();
+      } catch { showToast('Ошибка'); }
+    }
+
+    function growthNodeIcon(node) {
+      if (node.node_type === 'boss') return '👹';
+      if (node.node_type === 'milestone') return '🏁';
+      return '📘';
+    }
+
+    function growthNodeClass(node) {
+      return {
+        'growth-node-done': node.status === 'completed',
+        'growth-node-active': node.status === 'available' || node.status === 'in_progress',
+        'growth-node-locked': node.status === 'locked',
+      };
+    }
+
+    async function openGrowthNode(node) {
+      if (node.status === 'locked' || node.status === 'completed') return;
+      activeGrowthNode.value = node;
+      growthReflection.value = { summary: '' };
+      if (node.status === 'available') {
+        try { await QuestAPI.startGrowthNode(node.id); } catch { /* offline */ }
+      }
+      showGrowthNode.value = true;
+    }
+
+    async function submitGrowthNode() {
+      if (!activeGrowthNode.value?.id) return;
+      if ((growthReflection.value.summary || '').trim().length < 10) {
+        showToast('Итог от 10 символов');
+        return;
+      }
+      try {
+        const result = await QuestAPI.completeGrowthNode(activeGrowthNode.value.id, growthReflection.value);
+        showGrowthNode.value = false;
+        playCelebration(result?.celebration?.animations || ['xp_burst']);
+        showToast(`+${result.xp_gained} XP · Growth path`);
+        await Promise.all([refresh(), loadGrowth()]);
+      } catch {
+        showToast('Нет связи с сервером');
+      }
     }
 
     function switchTab(name) {
@@ -400,7 +666,7 @@ createApp({
         showToast('Квест уже обработан');
         return;
       }
-      showToast(`+${result.xp_gained} XP ⚡`);
+      handleQuestCompleteCelebration(result);
       await refresh();
       if (selectedDate.value) await loadJournalDay(selectedDate.value);
       if (tab.value === 'journal') await loadCalendar();
@@ -585,7 +851,17 @@ createApp({
     watch(tab, async (name) => {
       if (name === 'journal') await loadCalendar();
       if (name === 'quests' || name === 'home') await refresh();
+      if (name === 'league') await loadLeague();
+      if (name === 'growth') await loadGrowth();
+      if (name === 'clan') await loadClan();
+      if (name === 'shop') await loadShop();
     });
+
+    watch(
+      () => displayProfile.value?.gamification?.active_theme,
+      (code) => applyThemeCode(code || 'default'),
+      { immediate: true },
+    );
 
     onMounted(async () => {
       setupTelegramViewport();
@@ -608,7 +884,12 @@ createApp({
     return {
       tab, profile, displayProfile, questPack, apiOnline, toast, swipe, syncInfo,
       showReflect, showImport, importReplace, showKpiEdit, showAddQuest, showEditQuest,
-      showGoalEdit, showGoalAdd, showQuestDetail,
+      showGoalEdit, showGoalAdd, showQuestDetail, showChestLoot, showEveningChest,
+      showGrowthNode, activeGrowthNode, growthReflection,
+      chestLoot, eveningReflection, celebrationFx,
+      leagueData, growthPath,
+      clanData, clanForm, shopThemes, subscription,
+      chestSummary, victoryProgressPct, readyChests,
       activeQuest, detailQuest, importJson, reflection, progressNotes,
       kpiForm, questForm, goalForm, savingsForm,
       calendarYear, calendarMonth, calendarData, selectedDate, journalQuests,
@@ -617,6 +898,10 @@ createApp({
       STAT_LABELS, KPI_FIELDS, REFLECTION_FIELDS,
       QuestAPI,
       fmtMoney, fmtNum, fmtDueTime, pct, showToast, switchTab, refresh,
+      playCelebration, openReadyChest, claimMorning, openEveningChestModal, submitEveningChest,
+      loadLeague, loadGrowth, growthNodeIcon, growthNodeClass, openGrowthNode, submitGrowthNode,
+      loadClan, loadShop, createClanAction, joinClanAction, leaveClanAction,
+      activateThemeAction, checkoutProAction, useGraceAction,
       openKpiEdit, saveKpi,
       openAddQuest, openEditQuest, saveNewQuest, saveEditedQuest, removeQuest, deferQuestToTomorrow,
       onQuestTouchStart, onQuestTouchMove, onQuestTouchEnd, questSwipeStyle,
@@ -631,6 +916,13 @@ createApp({
       <div class="app-bg"></div>
 
       <div v-if="toast" class="toast">{{ toast }}</div>
+
+      <div v-if="celebrationFx.length" class="celebration-layer">
+        <span v-if="celebrationFx.includes('xp_burst')" class="fx fx-xp">+XP</span>
+        <span v-if="celebrationFx.includes('coin_spin')" class="fx fx-coin">🪙</span>
+        <span v-if="celebrationFx.includes('streak_pulse')" class="fx fx-streak">🔥</span>
+        <span v-if="celebrationFx.includes('chest_drop')" class="fx fx-chest">📦</span>
+      </div>
 
       <div v-if="!apiOnline" class="offline-banner">
         📡 Нет связи с сервером — задачи не загружены. Проверь Django + cloudflared, обнови URL в config.js.
@@ -652,11 +944,56 @@ createApp({
               <div class="xp-bar"><div class="xp-fill" :style="{width: xpPercent+'%'}"></div></div>
             </div>
             <div class="streak">🔥 ACTION STREAK · {{ displayProfile.action_streak }} дней</div>
+            <div v-if="displayProfile.gamification" class="hero-meta-row">
+              <span>🪙 {{ displayProfile.gamification.quest_coins }} coins</span>
+              <span v-if="displayProfile.gamification.quest_pro" class="pro-badge">PRO</span>
+            </div>
           </div>
 
-          <div v-if="displayProfile.season" class="season-banner">
+          <div v-if="displayProfile.season_v2" class="season-banner season-v2">
+            🏆 {{ displayProfile.season_v2.title }}<br>
+            ⚡ Season XP: <strong>{{ fmtNum(displayProfile.season_v2.season_xp) }}</strong>
+            · 🥇 {{ displayProfile.season_v2.league_tier }}
+            · {{ displayProfile.season_v2.days_left }} дн. до конца
+          </div>
+          <div v-else-if="displayProfile.season" class="season-banner">
             🏆 SEASON {{ String(displayProfile.season.number).padStart(2,'0') }} — <strong>{{ displayProfile.season.title }}</strong><br>
             🐉 Босс: {{ displayProfile.season.boss_name }}
+          </div>
+
+          <div v-if="chestSummary" class="chest-panel card">
+            <div class="section-head">📦 Daily Chests</div>
+            <div class="chest-victory-row">
+              <span>Victory Chest</span>
+              <span>{{ chestSummary.victory_progress?.completed || 0 }}/{{ chestSummary.victory_progress?.required || 3 }} квестов</span>
+            </div>
+            <div class="progress-mini"><div class="progress-mini-fill gold" :style="{width: victoryProgressPct+'%'}"></div></div>
+            <div class="chest-actions">
+              <button type="button" class="btn btn-sm" :disabled="!chestSummary.morning_available" @click="claimMorning">
+                🌅 Утро
+              </button>
+              <button type="button" class="btn btn-sm" :disabled="!chestSummary.evening_available" @click="openEveningChestModal">
+                🌙 Вечер
+              </button>
+            </div>
+            <div v-if="readyChests.length" class="chest-ready-list">
+              <button
+                v-for="c in readyChests"
+                :key="c.id"
+                type="button"
+                class="chest-ready-btn"
+                @click="openReadyChest(c)"
+              >
+                {{ c.icon || '📦' }} {{ c.title }} — открыть
+              </button>
+            </div>
+          </div>
+
+          <div v-if="displayProfile.league" class="league-mini card" @click="switchTab('league')">
+            🥇 {{ displayProfile.league.tier }} · Rank #{{ displayProfile.league.rank }}
+            · {{ displayProfile.league.weekly_xp }} XP / week
+            <span v-if="displayProfile.league.in_promotion_zone" class="zone-badge promote">↑</span>
+            <span v-else-if="displayProfile.league.in_demotion_zone" class="zone-badge demote">↓</span>
           </div>
 
           <div class="section-head-row">
@@ -762,6 +1099,139 @@ createApp({
 
             <button type="button" class="btn btn-secondary quest-refresh" @click="openReplaceImport">↻ Заменить Quest Pack</button>
           </template>
+        </section>
+
+        <!-- LEAGUE -->
+        <section v-else-if="tab==='league'" class="screen">
+          <div class="section-head">🥇 Weekly League</div>
+          <div v-if="!leagueData" class="empty-state"><p>Загрузка...</p></div>
+          <template v-else>
+            <div class="league-header card">
+              <div class="league-tier">{{ leagueData.tier }}</div>
+              <div class="league-meta">
+                Rank <strong>#{{ leagueData.rank }}</strong> / {{ leagueData.member_count }}
+                · {{ leagueData.weekly_xp }} XP
+                · {{ leagueData.days_left }} дн.
+              </div>
+              <div class="league-zones">
+                <span class="zone-label promote">Top {{ leagueData.promotion_zone }} → ↑</span>
+                <span class="zone-label demote">Bottom {{ leagueData.demotion_zone }} → ↓</span>
+              </div>
+            </div>
+            <div class="league-list">
+              <div
+                v-for="m in leagueData.members"
+                :key="m.rank + '-' + m.display_name"
+                class="league-row"
+                :class="{ 'is-you': m.is_you, promote: m.rank <= leagueData.promotion_zone, demote: m.rank > leagueData.member_count - leagueData.demotion_zone && leagueData.demotion_zone }"
+              >
+                <span class="league-rank">#{{ m.rank }}</span>
+                <span class="league-name">{{ m.display_name }}</span>
+                <span class="league-xp">{{ m.weekly_xp }} XP</span>
+              </div>
+            </div>
+          </template>
+        </section>
+
+        <!-- GROWTH -->
+        <section v-else-if="tab==='growth'" class="screen">
+          <div class="section-head">🌱 Growth Path</div>
+          <div v-if="!growthPath" class="empty-state"><p>Загрузка...</p></div>
+          <template v-else>
+            <div class="growth-intro card">
+              <h3>{{ growthPath.title }}</h3>
+              <p>{{ growthPath.description }}</p>
+            </div>
+            <div v-for="unit in growthPath.units" :key="unit.id" class="growth-unit card">
+              <div class="growth-unit-title">{{ unit.title }}</div>
+              <p class="growth-unit-desc">{{ unit.description }}</p>
+              <div class="growth-nodes">
+                <button
+                  v-for="node in unit.nodes"
+                  :key="node.id"
+                  type="button"
+                  class="growth-node"
+                  :class="growthNodeClass(node)"
+                  :disabled="node.status === 'locked'"
+                  @click="openGrowthNode(node)"
+                >
+                  <span class="growth-node-icon">{{ growthNodeIcon(node) }}</span>
+                  <span class="growth-node-title">{{ node.title }}</span>
+                  <span class="growth-node-xp">+{{ node.xp_reward }} XP</span>
+                </button>
+              </div>
+            </div>
+          </template>
+        </section>
+
+        <!-- CLAN -->
+        <section v-else-if="tab==='clan'" class="screen">
+          <div class="section-head">⚔️ Clan Sprint</div>
+          <div v-if="!clanData" class="card clan-create">
+            <p class="modal-sub">Клан 5–10 человек. Sprint стартует от 5 участников.</p>
+            <div class="field">
+              <label>Название клана</label>
+              <input v-model="clanForm.name" type="text" maxlength="32" placeholder="ALIHAN SQUAD">
+            </div>
+            <button type="button" class="btn btn-primary" @click="createClanAction">Создать клан</button>
+            <div class="field" style="margin-top:16px">
+              <label>Или код приглашения</label>
+              <input v-model="clanForm.invite_code" type="text" maxlength="8" placeholder="ABC12345">
+            </div>
+            <button type="button" class="btn btn-secondary" @click="joinClanAction">Вступить</button>
+          </div>
+          <template v-else>
+            <div class="card clan-header">
+              <h3>{{ clanData.name }}</h3>
+              <p class="modal-sub">{{ clanData.member_count }}/{{ clanData.max_members }} · min {{ clanData.min_members }} для sprint</p>
+              <p v-if="clanData.invite_code" class="invite-code">Код: <strong>{{ clanData.invite_code }}</strong></p>
+              <div v-if="clanData.sprint" class="sprint-bar-wrap">
+                <div class="chest-victory-row">
+                  <span>River Sprint</span>
+                  <span>{{ clanData.sprint.total_xp }}/{{ clanData.sprint.goal_xp || '—' }} XP</span>
+                </div>
+                <div class="progress-mini"><div class="progress-mini-fill gold" :style="{width: clanData.sprint.progress_pct+'%'}"></div></div>
+              </div>
+              <ul class="clan-members">
+                <li v-for="(m, i) in clanData.members" :key="i">
+                  {{ m.display_name }} <span v-if="m.role==='leader'">👑</span>
+                </li>
+              </ul>
+              <button type="button" class="btn btn-secondary" @click="leaveClanAction">Покинуть клан</button>
+            </div>
+          </template>
+        </section>
+
+        <!-- SHOP / PRO -->
+        <section v-else-if="tab==='shop'" class="screen">
+          <div class="section-head">🛒 Quest Pro & Themes</div>
+          <div class="card pro-card">
+            <div class="pro-title">Quest Pro</div>
+            <p class="modal-sub">Темы, +1 streak grace/мес, ранний доступ</p>
+            <p v-if="subscription?.quest_pro" class="pro-active">✓ PRO активен</p>
+            <p v-else-if="subscription?.payments_mode==='stub'" class="modal-sub">Оплата: stub (ключи ЮKassa на сервере)</p>
+            <button v-if="!subscription?.quest_pro" type="button" class="btn btn-primary" @click="checkoutProAction">
+              Подключить Pro · {{ subscription?.plans?.[0]?.price_rub || '299' }} ₽/мес
+            </button>
+            <button v-if="displayProfile.gamification?.streak_grace_available" type="button" class="btn btn-sm btn-secondary" style="margin-top:8px" @click="useGraceAction">
+              🔥 Использовать streak grace
+            </button>
+          </div>
+          <div class="theme-grid">
+            <button
+              v-for="t in shopThemes"
+              :key="t.code"
+              type="button"
+              class="theme-card"
+              :class="{ active: t.is_active, locked: !t.can_activate }"
+              :style="{ borderColor: t.preview_color }"
+              @click="activateThemeAction(t.code)"
+            >
+              <span class="theme-swatch" :style="{ background: t.preview_color }"></span>
+              <span class="theme-name">{{ t.title }}</span>
+              <span v-if="t.requires_pro" class="theme-badge">PRO</span>
+            </button>
+          </div>
         </section>
 
         <!-- STATS -->
@@ -888,9 +1358,13 @@ createApp({
         </section>
       </main>
 
-      <nav class="bottom-nav">
+      <nav class="bottom-nav bottom-nav-scroll">
         <button type="button" class="nav-item" :class="{active: tab==='home'}" @click="switchTab('home')"><span class="ico">🏠</span>HOME</button>
         <button type="button" class="nav-item" :class="{active: tab==='quests'}" @click="switchTab('quests')"><span class="ico">⚔️</span>QUESTS</button>
+        <button type="button" class="nav-item" :class="{active: tab==='growth'}" @click="switchTab('growth')"><span class="ico">🌱</span>GROWTH</button>
+        <button type="button" class="nav-item" :class="{active: tab==='league'}" @click="switchTab('league')"><span class="ico">🥇</span>LEAGUE</button>
+        <button type="button" class="nav-item" :class="{active: tab==='clan'}" @click="switchTab('clan')"><span class="ico">⚔️</span>CLAN</button>
+        <button type="button" class="nav-item" :class="{active: tab==='shop'}" @click="switchTab('shop')"><span class="ico">🛒</span>SHOP</button>
         <button type="button" class="nav-item" :class="{active: tab==='stats'}" @click="switchTab('stats')"><span class="ico">📊</span>STATS</button>
         <button type="button" class="nav-item" :class="{active: tab==='goals'}" @click="switchTab('goals')"><span class="ico">🎯</span>GOALS</button>
         <button type="button" class="nav-item" :class="{active: tab==='journal'}" @click="switchTab('journal')"><span class="ico">📅</span>JOURNAL</button>
@@ -1109,6 +1583,55 @@ createApp({
                     @click="showQuestDetail=false; openQuest(detailQuest)">
               Открыть задачу
             </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Growth node complete -->
+      <div v-if="showGrowthNode && activeGrowthNode" class="modal-overlay" @click.self="showGrowthNode=false">
+        <div class="modal">
+          <h3>{{ growthNodeIcon(activeGrowthNode) }} {{ activeGrowthNode.title }}</h3>
+          <p class="modal-sub">+{{ activeGrowthNode.xp_reward }} XP · Growth node</p>
+          <div class="field">
+            <label>Итог / рефлексия (мин. 10 символов)</label>
+            <textarea v-model="growthReflection.summary" rows="4" placeholder="Что сделал по этому шагу пути?"></textarea>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" @click="showGrowthNode=false">Отмена</button>
+            <button type="button" class="btn btn-primary" @click="submitGrowthNode">Завершить node</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Chest loot reveal -->
+      <div v-if="showChestLoot && chestLoot" class="modal-overlay" @click.self="showChestLoot=false">
+        <div class="modal chest-loot-modal">
+          <h3>{{ chestLoot.title }}</h3>
+          <div class="chest-loot-shake">📦</div>
+          <ul class="chest-loot-list">
+            <li v-for="(item, idx) in (chestLoot.loot?.items || [])" :key="idx">
+              {{ item.label }}
+              <span v-if="item.text" class="chest-loot-tip">{{ item.text }}</span>
+            </li>
+          </ul>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-primary" @click="showChestLoot=false">Забрать!</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Evening chest reflection -->
+      <div v-if="showEveningChest" class="modal-overlay" @click.self="showEveningChest=false">
+        <div class="modal">
+          <h3>🌙 Evening Chest</h3>
+          <p class="modal-sub">Краткий итог дня (мин. 10 символов) — и сундук твой.</p>
+          <div class="field">
+            <label>Итог дня</label>
+            <textarea v-model="eveningReflection" rows="4" placeholder="Что сегодня было главным?"></textarea>
+          </div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" @click="showEveningChest=false">Отмена</button>
+            <button type="button" class="btn btn-primary" @click="submitEveningChest">Получить сундук</button>
           </div>
         </div>
       </div>
