@@ -1,6 +1,7 @@
-// API backend URL. При перезапуске cloudflared URL меняется — обнови API_BASE ниже.
+﻿// API backend URL. Auto-updated by start-alihan-quest launcher.
 window.QUEST_CONFIG = {
-  API_BASE: 'https://seas-analog-connector-payment.trycloudflare.com',
+  API_BASE: 'https://earlier-scope-amongst-cities.trycloudflare.com',
   DEMO_TOKEN: 'demo-alihan-quest',
-  CACHE_VERSION: 3,
+  CACHE_VERSION: 5,
 };
+
