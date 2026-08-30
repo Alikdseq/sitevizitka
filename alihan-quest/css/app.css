@@ -839,6 +839,13 @@ body.theme-forest { --bg: #071510; --card: #0f2419; --gold: #4ade80; }
 .stat-rule-input { width: 56px; }
 .stat-label-input, .stat-rule-label { min-width: 0; }
 .progress-summary { padding: 14px; margin-bottom: 12px; }
+.insight-card { padding: 14px 16px; margin-bottom: 10px; border-left: 3px solid var(--gold); }
+.insight-card.insight-growth { border-left-color: #4ade80; }
+.insight-card.insight-record { border-left-color: #fbbf24; }
+.insight-card.insight-xp { border-left-color: #60a5fa; }
+.insight-message { margin: 0; font-size: 0.92rem; line-height: 1.45; }
+.insight-meta { margin-top: 6px; font-size: 0.8rem; color: #4ade80; font-weight: 700; }
+.insight-empty { padding: 12px; font-size: 0.85rem; color: var(--muted); }
 .progress-subhead { font-size: 0.95rem; margin-top: 12px; margin-bottom: 8px; opacity: 0.9; }
 .progress-summary-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.9rem; }
 .progress-metric { padding: 12px 14px; margin-bottom: 8px; }

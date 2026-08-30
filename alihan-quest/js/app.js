@@ -338,11 +338,11 @@ createApp({
       }
     }
 
-    async function loadAnalytics() {
+    async function loadJournalInsights() {
       try {
         analyticsData.value = await QuestAPI.getAnalytics();
       } catch {
-        analyticsData.value = null;
+        analyticsData.value = { insights: [], summary: {} };
       }
     }
 
@@ -688,7 +688,7 @@ createApp({
     }
 
     async function afterQuestDeleted(context) {
-      if (context === 'progress' || context === 'journal') {
+      if (context === 'journal') {
         if (selectedDate.value) await loadJournalDay(selectedDate.value);
         await loadCalendar();
         const today = new Date().toISOString().slice(0, 10);
@@ -700,7 +700,10 @@ createApp({
       }
       const q = await QuestAPI.getTodayQuests();
       if (q.online && q.data) questPack.value = q.data;
-      if (tab.value === 'progress') await loadCalendar();
+      if (tab.value === 'journal') {
+        await loadJournalInsights();
+        await loadCalendar();
+      }
     }
 
     function resetSwipe() {
@@ -784,7 +787,7 @@ createApp({
       handleQuestCompleteCelebration(result);
       await refresh();
       if (selectedDate.value) await loadJournalDay(selectedDate.value);
-      if (tab.value === 'progress') await loadCalendar();
+      if (tab.value === 'journal') await loadJournalInsights();
       if (window.Telegram?.WebApp?.HapticFeedback) {
         window.Telegram.WebApp.HapticFeedback.notificationOccurred('success');
       }
@@ -969,8 +972,8 @@ createApp({
       if (name === 'growth') await loadGrowth();
       if (name === 'clan') await loadClan();
       if (name === 'shop') await loadShop();
-      if (name === 'progress') {
-        await Promise.all([loadAnalytics(), loadCalendar()]);
+      if (name === 'journal') {
+        await Promise.all([loadCalendar(), loadJournalInsights()]);
       }
     });
 
@@ -1019,7 +1022,7 @@ createApp({
       QuestAPI,
       fmtMoney, fmtNum, fmtDueTime, pct, showToast, switchTab, refresh,
       playCelebration, openReadyChest, claimMorning, openEveningChestModal, submitEveningChest,
-      loadLeague, loadGrowth, loadAnalytics, growthNodeIcon, growthNodeClass, openGrowthNode, submitGrowthNode,
+      loadLeague, loadGrowth, loadJournalInsights, growthNodeIcon, growthNodeClass, openGrowthNode, submitGrowthNode,
       initOnboarding, submitOnboardingStep, addOnboardingStat, removeOnboardingStat, addOnboardingHabit,
       openStatEdit, saveStatEdit,
       loadClan, loadShop, createClanAction, joinClanAction, leaveClanAction,
@@ -1391,11 +1394,27 @@ createApp({
           </p>
         </section>
 
-        <!-- PROGRESS -->
-        <section v-else-if="tab==='progress'" class="screen">
-          <div class="section-head">📈 Прогресс</div>
+        <!-- JOURNAL -->
+        <section v-else-if="tab==='journal'" class="screen">
+          <div class="section-head">📅 Журнал</div>
 
-          <div class="section-head progress-subhead">📅 Календарь квестов</div>
+          <div v-if="analyticsData?.insights?.length" class="insights-block">
+            <div class="section-head progress-subhead">✨ Замеченный прогресс</div>
+            <div
+              v-for="ins in analyticsData.insights"
+              :key="ins.id"
+              class="card insight-card"
+              :class="'insight-' + ins.type"
+            >
+              <p class="insight-message">{{ ins.message }}</p>
+              <div v-if="ins.change_pct" class="insight-meta">+{{ ins.change_pct }}%</div>
+            </div>
+          </div>
+          <div v-else-if="analyticsData" class="empty-state insight-empty">
+            <p>📊 Выполняй квесты с числами в заметках — например «300 приседаний». Программа сама заметит рост.</p>
+          </div>
+
+          <div class="section-head progress-subhead" style="margin-top:16px">📅 Календарь</div>
           <div class="cal-nav">
             <button type="button" class="edit-btn" @click="prevMonth">←</button>
             <span class="cal-nav-title">{{ calendarTitle }}</span>
@@ -1433,37 +1452,10 @@ createApp({
                 <div class="quest-xp">+{{ q.xp_reward }} ОП · {{ statLabel(q.stat_key) }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
               </div>
               <div v-if="q.status==='pending'" class="quest-actions" @click.stop>
-                <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="removeQuest(q, $event, 'progress')">🗑</button>
+                <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="removeQuest(q, $event, 'journal')">🗑</button>
               </div>
             </div>
           </div>
-
-          <div class="section-head progress-subhead" style="margin-top:20px">📊 Аналитика</div>
-          <div v-if="!analyticsData" class="empty-state"><p>Загрузка аналитики...</p></div>
-          <template v-else>
-            <div class="card progress-summary">
-              <div class="progress-summary-row">
-                <span>ОП сегодня</span><strong>{{ analyticsData.summary?.today_xp || 0 }}</strong>
-              </div>
-              <div class="progress-summary-row">
-                <span>ОП за неделю</span><strong>{{ analyticsData.summary?.week_xp || 0 }}</strong>
-              </div>
-            </div>
-            <div v-for="m in analyticsData.metrics" :key="m.stat_key" class="card progress-metric" :class="'trend-'+m.trend">
-              <div class="progress-metric-head">{{ m.label }}</div>
-              <div class="progress-metric-values">
-                <span>Сегодня: <strong>{{ fmtNum(m.today) }}</strong></span>
-                <span>Макс. недели: {{ fmtNum(m.week_max) }}</span>
-              </div>
-              <p v-if="m.insight" class="progress-insight">{{ m.insight }}</p>
-            </div>
-            <div v-if="analyticsData.xp_timeline?.length" class="section-head progress-subhead">⚡ История ОП</div>
-            <div v-for="(ev, i) in analyticsData.xp_timeline.slice(0, 15)" :key="i" class="xp-timeline-row">
-              <span class="xp-timeline-amt">+{{ ev.amount }}</span>
-              <span class="xp-timeline-reason">{{ ev.reason }}</span>
-              <span class="xp-timeline-date">{{ ev.date }}</span>
-            </div>
-          </template>
         </section>
 
         <!-- GOALS -->
@@ -1522,7 +1514,7 @@ createApp({
       <nav class="bottom-nav bottom-nav-scroll">
         <button type="button" class="nav-item" :class="{active: tab==='home'}" @click="switchTab('home')"><span class="ico">🏠</span>Главная</button>
         <button type="button" class="nav-item" :class="{active: tab==='quests'}" @click="switchTab('quests')"><span class="ico">⚔️</span>Квесты</button>
-        <button type="button" class="nav-item" :class="{active: tab==='progress'}" @click="switchTab('progress')"><span class="ico">📈</span>Прогресс</button>
+        <button type="button" class="nav-item" :class="{active: tab==='journal'}" @click="switchTab('journal')"><span class="ico">📅</span>Журнал</button>
         <button type="button" class="nav-item" :class="{active: tab==='growth'}" @click="switchTab('growth')"><span class="ico">🌱</span>Рост</button>
         <button type="button" class="nav-item" :class="{active: tab==='league'}" @click="switchTab('league')"><span class="ico">🥇</span>Лига</button>
         <button type="button" class="nav-item" :class="{active: tab==='clan'}" @click="switchTab('clan')"><span class="ico">⚔️</span>Клан</button>
@@ -1530,7 +1522,6 @@ createApp({
         <button type="button" class="nav-item" :class="{active: tab==='stats'}" @click="switchTab('stats')"><span class="ico">📊</span>Статы</button>
         <button type="button" class="nav-item" :class="{active: tab==='goals'}" @click="switchTab('goals')"><span class="ico">🎯</span>Цели</button>
       </nav>
-
       <!-- Work on quest / Complete -->
       <div v-if="showReflect" class="modal-overlay" @click.self="showReflect=false">
         <div class="modal modal-work">
