@@ -75,31 +75,41 @@ const LEVEL_TITLES = [
   [50, 999, 'АРХИТЕКТОР СОБСТВЕННОЙ ЖИЗНИ'],
 ];
 
+function getTelegramUserId() {
+  const id = window.Telegram?.WebApp?.initDataUnsafe?.user?.id;
+  return id ? String(id) : null;
+}
+
+function storageKey() {
+  const uid = getTelegramUserId();
+  return uid ? `${STORAGE_KEY}_tg_${uid}` : `${STORAGE_KEY}_demo`;
+}
+
 function titleForLevel(level) {
   const lv = Number(level) || 1;
   for (const [low, high, title] of LEVEL_TITLES) {
     if (lv >= low && lv <= high) return title;
   }
-  return 'АЛИХАН';
+  return 'ИГРОК';
 }
 
 const DEFAULT_KPI = {
-  capital_season: 215000,
-  capital_goal: 1000000,
-  mabibip_users: 520,
-  mabibip_goal: 1200,
-  mabibip_masters: 175,
-  mabibip_masters_goal: 300,
-  instagram_followers: 5198,
-  instagram_goal: 10000,
-  business_projects: 10,
-  weight_kg: 80,
-  weight_goal_kg: 88,
+  capital_season: 0,
+  capital_goal: 0,
+  mabibip_users: 0,
+  mabibip_goal: 0,
+  mabibip_masters: 0,
+  mabibip_masters_goal: 0,
+  instagram_followers: 0,
+  instagram_goal: 0,
+  business_projects: 0,
+  weight_kg: 0,
+  weight_goal_kg: 0,
   home_savings: 0,
   home_goal: 0,
   car_savings: 0,
   car_goal: 0,
-  skills_count: 12,
+  skills_count: 0,
   contacts_count: 0,
   form_sessions: 0,
   discipline_perfect_weeks: 0,
@@ -110,7 +120,7 @@ const DEFAULT_PROFILE = (() => {
   const stats_levels = computeStatLevels(DEFAULT_KPI);
   const level = computeHeroLevel(stats_levels);
   return {
-    display_name: 'АЛИХАН',
+    display_name: 'Игрок',
     level,
     title: 'ПЕРВЫЙ ШАГ',
     total_xp: 0,
@@ -121,7 +131,8 @@ const DEFAULT_PROFILE = (() => {
     stats_xp: Object.fromEntries(STAT_KEYS.map((k) => [k, 0])),
     stats_levels,
     goals: [],
-    season: { number: 1, title: 'ВОЗВРАЩЕНИЕ', boss_name: 'ФИНАНСОВАЯ НЕСТАБИЛЬНОСТЬ', boss_defeated: false },
+    season: { number: 1, title: 'НОВЫЙ ПУТЬ', boss_name: 'ПРОКРАСТИНАЦИЯ', boss_defeated: false },
+    onboarding: { completed: false, step: 'welcome' },
   };
 })();
 
@@ -133,7 +144,7 @@ const DEMO_QUESTS = {
 
 function loadLocal() {
   try {
-    const raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+    const raw = JSON.parse(localStorage.getItem(storageKey()) || '{}');
     const ver = window.QUEST_CONFIG?.CACHE_VERSION || 1;
     if (raw._cacheVersion !== ver) return { _cacheVersion: ver };
     return raw;
@@ -142,17 +153,19 @@ function loadLocal() {
 
 function saveLocal(data) {
   const ver = window.QUEST_CONFIG?.CACHE_VERSION || 1;
-  localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...data, _cacheVersion: ver }));
-  // Удалить старый кэш с фейковыми задачами
+  localStorage.setItem(storageKey(), JSON.stringify({ ...data, _cacheVersion: ver }));
   try { localStorage.removeItem('alihan_quest_local'); } catch { /* ignore */ }
+  try { localStorage.removeItem(STORAGE_KEY); } catch { /* legacy shared key */ }
 }
 
 function getHeaders() {
   const h = { 'Content-Type': 'application/json', Accept: 'application/json' };
   const tg = window.Telegram?.WebApp?.initData;
-  if (tg) h['X-Telegram-Init-Data'] = tg;
-  // Всегда demo-token — fallback на тот же профиль в БД (MVP single-user)
-  h['X-Demo-Token'] = window.QUEST_CONFIG?.DEMO_TOKEN || 'demo-alihan-quest';
+  if (tg) {
+    h['X-Telegram-Init-Data'] = tg;
+  } else if (window.QUEST_CONFIG?.DEMO_TOKEN) {
+    h['X-Demo-Token'] = window.QUEST_CONFIG.DEMO_TOKEN;
+  }
   return h;
 }
 

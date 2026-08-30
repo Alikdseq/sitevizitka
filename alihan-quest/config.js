@@ -2,6 +2,6 @@
 window.QUEST_CONFIG = {
   API_BASE: 'https://restrictions-walk-same-mechanism.trycloudflare.com',
   DEMO_TOKEN: 'demo-alihan-quest',
-  CACHE_VERSION: 21,
+  CACHE_VERSION: 22,
 };
 
