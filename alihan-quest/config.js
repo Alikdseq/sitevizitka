@@ -2,6 +2,6 @@
 window.QUEST_CONFIG = {
   API_BASE: 'https://emma-fundamental-wires-pound.trycloudflare.com',
   DEMO_TOKEN: 'demo-alihan-quest',
-  CACHE_VERSION: 25,
+  CACHE_VERSION: 26,
 };
 

@@ -158,11 +158,21 @@ function saveLocal(data) {
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* legacy shared key */ }
 }
 
+function getTelegramInitData() {
+  const fromSdk = window.Telegram?.WebApp?.initData;
+  if (fromSdk) return fromSdk;
+  try {
+    const q = new URLSearchParams(window.location.search);
+    return q.get('tgWebAppData') || '';
+  } catch { return ''; }
+}
+
 function getHeaders() {
   const h = { 'Content-Type': 'application/json', Accept: 'application/json' };
-  const tg = window.Telegram?.WebApp?.initData;
-  if (tg) {
-    h['X-Telegram-Init-Data'] = tg;
+  const initData = getTelegramInitData();
+  if (initData) {
+    h['X-Telegram-Init-Data'] = initData;
+    h.Authorization = `tma ${initData}`;
   } else if (window.QUEST_CONFIG?.DEMO_TOKEN) {
     h['X-Demo-Token'] = window.QUEST_CONFIG.DEMO_TOKEN;
   }
@@ -235,8 +245,17 @@ async function apiFetch(path, options = {}) {
       headers: { ...getHeaders(), ...options.headers },
       cache: 'no-store',
     });
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    return parseJsonResponse(res);
+    const text = await res.text();
+    if (!res.ok) {
+      const err = new Error(`API ${res.status}`);
+      err.status = res.status;
+      try { err.body = JSON.parse(text); } catch { err.body = text; }
+      throw err;
+    }
+    if (!text || text.trim().startsWith('<')) throw new Error('html response');
+    const data = JSON.parse(text);
+    if (!data || typeof data !== 'object') throw new Error('invalid json');
+    return data;
   } finally {
     clearTimeout(timer);
   }
@@ -270,8 +289,8 @@ window.QuestAPI = {
       local.profile = data;
       saveLocal(local);
       return { data, online: true };
-    } catch {
-      return { data: cachedProfile(), online: false };
+    } catch (err) {
+      return { data: cachedProfile(), online: false, authError: err?.status === 403 };
     }
   },
 
@@ -296,7 +315,7 @@ window.QuestAPI = {
       saveLocal(local);
       return { data, online: true, sync: raw.sync || null };
     } catch (err) {
-      return { data: { date: new Date().toISOString().slice(0, 10), main_mission: '', quests: [], sync: null }, online: false, error: String(err) };
+      return { data: { date: new Date().toISOString().slice(0, 10), main_mission: '', quests: [], sync: null }, online: false, authError: err?.status === 403, error: String(err) };
     }
   },
 

@@ -98,6 +98,7 @@ createApp({
     const profile = ref(QuestAPI.cachedProfile());
     const questPack = ref(QuestAPI.cachedQuests());
     const apiOnline = ref(false);
+    const authError = ref(false);
     const toast = ref('');
 
     const showReflect = ref(false);
@@ -571,6 +572,7 @@ createApp({
         QuestAPI.getProfile(),
         QuestAPI.getTodayQuests(),
       ]);
+      authError.value = Boolean(p?.authError || q?.authError);
       apiOnline.value = Boolean(p?.online && q?.online);
       syncInfo.value = q?.sync || p?.data?.sync || q?.data?.sync || null;
       if (p?.online && p.data) profile.value = ensureProfile(p.data);
@@ -1002,7 +1004,7 @@ createApp({
     });
 
     return {
-      tab, profile, displayProfile, questPack, apiOnline, toast, swipe, syncInfo,
+      tab, profile, displayProfile, questPack, apiOnline, authError, toast, swipe, syncInfo,
       showReflect, showImport, importReplace, showKpiEdit, showAddQuest, showEditQuest,
       showGoalEdit, showGoalAdd, showQuestDetail, showChestLoot, showEveningChest,
       showGrowthNode, activeGrowthNode, growthReflection,
@@ -1059,8 +1061,13 @@ createApp({
         <span v-if="celebrationFx.includes('level_up')" class="fx fx-levelup">⬆️</span>
       </div>
 
-      <div v-if="!apiOnline" class="offline-banner">
-        📡 Нет связи с сервером — задачи не загружены. Проверь Django + cloudflared, обнови URL в config.js.
+      <div v-if="authError" class="offline-banner">
+        🔐 Ошибка входа Telegram. Открой игру через бота
+        <a href="https://t.me/game_alikhan_bot" target="_blank" rel="noopener">@game_alikhan_bot</a>
+        → «Открыть ALIHAN QUEST». Не через личный @A_7l_i.
+      </div>
+      <div v-else-if="!apiOnline" class="offline-banner">
+        📡 Нет связи с сервером — проверь, что Django и cloudflared запущены.
       </div>
       <div v-else-if="syncInfo" class="sync-banner">
         🗄 БД · player #{{ syncInfo.player_id }} · {{ syncInfo.quest_count }} задач ({{ syncInfo.manual_count || 0 }} вручную) · бот видит то же
