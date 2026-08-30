@@ -2,6 +2,6 @@
 window.QUEST_CONFIG = {
   API_BASE: 'https://organization-blocked-mistress-usa.trycloudflare.com',
   DEMO_TOKEN: 'demo-alihan-quest',
-  CACHE_VERSION: 18,
+  CACHE_VERSION: 19,
 };
 

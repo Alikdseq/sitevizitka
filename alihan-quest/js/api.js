@@ -24,7 +24,22 @@ const STAT_LEVEL_RULES = {
   discipline: '7 дней подряд все задачи = 1 ур.',
 };
 
-function computeStatLevels(kpi) {
+function computeStatLevelsFromDefinitions(definitions) {
+  const out = {};
+  (definitions || []).forEach((d) => {
+    const val = Number(d.current_value || 0);
+    if (d.rule_type === 'direct') out[d.key] = Math.max(0, Math.floor(val));
+    else if (d.rule_type === 'streak_week') out[d.key] = Math.max(0, Math.floor(val));
+    else {
+      const div = Math.max(1, Number(d.rule_value || 1));
+      out[d.key] = Math.floor(val / div);
+    }
+  });
+  return out;
+}
+
+function computeStatLevels(kpi, definitions) {
+  if (definitions?.length) return computeStatLevelsFromDefinitions(definitions);
   const k = kpi || {};
   return {
     capital: Math.floor(Number(k.capital_season || 0) / 10000),
@@ -151,9 +166,11 @@ function getApiBase() {
 function normalizeProfile(data) {
   const src = data && typeof data === 'object' ? data : {};
   const kpi = { ...DEFAULT_KPI, ...(src.kpi || {}) };
-  const stats_levels = computeStatLevels(kpi);
+  const statDefinitions = Array.isArray(src.stat_definitions) ? src.stat_definitions : [];
+  const stats_levels = computeStatLevels(kpi, statDefinitions);
   const level = computeHeroLevel(stats_levels);
   const title = titleForLevel(level);
+  const statLabels = src.stat_labels && typeof src.stat_labels === 'object' ? src.stat_labels : null;
   return {
     ...DEFAULT_PROFILE,
     ...src,
@@ -162,6 +179,10 @@ function normalizeProfile(data) {
     kpi,
     stats_xp: { ...DEFAULT_PROFILE.stats_xp, ...(src.stats_xp || {}) },
     stats_levels,
+    stat_definitions: statDefinitions,
+    stat_labels: statLabels,
+    habits: Array.isArray(src.habits) ? src.habits : [],
+    onboarding: src.onboarding || { completed: true, step: 'complete' },
     goals: Array.isArray(src.goals) ? src.goals : [],
     season: src.season ?? DEFAULT_PROFILE.season,
     gamification: src.gamification || null,
@@ -414,5 +435,34 @@ window.QuestAPI = {
 
   async useStreakGrace() {
     return await apiFetch('/gamification/streak/grace/', { method: 'POST', body: '{}' });
+  },
+
+  async getOnboarding() {
+    return await apiFetch('/onboarding/');
+  },
+
+  async saveOnboardingStep(step, payload) {
+    return await apiFetch('/onboarding/', {
+      method: 'POST',
+      body: JSON.stringify({ step, payload }),
+    });
+  },
+
+  async getAnalytics() {
+    return await apiFetch('/analytics/progress/');
+  },
+
+  async updateStatConfig(stats) {
+    return await apiFetch('/stats/config/', {
+      method: 'PATCH',
+      body: JSON.stringify({ stats }),
+    });
+  },
+
+  async updateHabits(habits) {
+    return await apiFetch('/habits/', {
+      method: 'PATCH',
+      body: JSON.stringify({ habits }),
+    });
   },
 };

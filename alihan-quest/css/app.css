@@ -148,6 +148,25 @@ body {
   position: fixed; inset: 0; pointer-events: none; z-index: 9998;
   display: flex; align-items: center; justify-content: center;
 }
+.celebration-card {
+  position: relative; z-index: 2; text-align: center; padding: 24px 28px;
+  background: rgba(10, 14, 24, 0.92); border: 1px solid rgba(251,191,36,0.4);
+  border-radius: 20px; box-shadow: 0 0 40px rgba(96,165,250,0.25);
+  animation: celebration-pop 2.6s ease-out forwards;
+  max-width: 90vw;
+}
+.celebration-confetti { font-size: 1.5rem; letter-spacing: 4px; margin-bottom: 8px; animation: fx-pop-scale 1s ease-in-out; }
+.celebration-msg { font-size: 1.05rem; font-weight: 600; color: #fbbf24; margin: 8px 0; }
+.celebration-xp { font-size: 2rem; font-weight: 800; color: #60a5fa; text-shadow: 0 0 20px rgba(96,165,250,0.5); }
+.celebration-stat { font-size: 0.9rem; color: var(--muted); margin-top: 4px; }
+.celebration-levelup { font-size: 0.95rem; color: #4ade80; margin-top: 8px; font-weight: 600; }
+@keyframes celebration-pop {
+  0% { opacity: 0; transform: scale(0.7); }
+  15% { opacity: 1; transform: scale(1.05); }
+  85% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.95) translateY(-10px); }
+}
+.fx-levelup { color: #4ade80; font-size: 2.5rem; animation-name: fx-pop-scale; }
 .fx {
   position: absolute; font-size: 2rem; font-weight: 800; animation: fx-pop 1.4s ease-out forwards;
   text-shadow: 0 0 24px rgba(251,191,36,0.6);
@@ -803,4 +822,38 @@ body.theme-forest { --bg: #071510; --card: #0f2419; --gold: #4ade80; }
 @media (min-width: 481px) {
   body { background: #060910; }
   #app { box-shadow: 0 0 0 1px var(--line); min-height: 100vh; }
+}
+
+.onboarding-overlay { z-index: 10000; background: rgba(0,0,0,0.85); }
+.onboarding-modal { max-width: 420px; max-height: 90vh; overflow-y: auto; }
+.onboarding-step h2 { margin: 0 0 8px; font-size: 1.3rem; }
+.onboarding-presets { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.onboarding-stat-row {
+  display: grid; grid-template-columns: 40px 1fr 100px 56px 1fr 32px; gap: 6px;
+  align-items: center; padding: 10px; margin: 8px 0;
+}
+.onboarding-habit-row {
+  display: grid; grid-template-columns: 1fr 120px 56px; gap: 8px; margin: 8px 0;
+}
+.stat-emoji-input { width: 40px; text-align: center; }
+.stat-rule-input { width: 56px; }
+.stat-label-input, .stat-rule-label { min-width: 0; }
+.progress-summary { padding: 14px; margin-bottom: 12px; }
+.progress-summary-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 0.9rem; }
+.progress-metric { padding: 12px 14px; margin-bottom: 8px; }
+.progress-metric-head { font-weight: 700; margin-bottom: 6px; }
+.progress-metric-values { display: flex; gap: 12px; font-size: 0.85rem; color: var(--muted); flex-wrap: wrap; }
+.progress-insight { font-size: 0.85rem; color: #4ade80; margin: 8px 0 0; }
+.progress-metric.trend-record { border-left: 3px solid #fbbf24; }
+.progress-metric.trend-up { border-left: 3px solid #4ade80; }
+.xp-timeline-row {
+  display: grid; grid-template-columns: 48px 1fr auto; gap: 8px; padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem;
+}
+.xp-timeline-amt { font-weight: 700; color: var(--gold); }
+.xp-timeline-date { color: var(--muted); font-size: 0.75rem; }
+
+@media (max-width: 480px) {
+  .onboarding-stat-row { grid-template-columns: 36px 1fr 1fr; }
+  .onboarding-habit-row { grid-template-columns: 1fr; }
 }
