@@ -1062,9 +1062,7 @@ createApp({
       </div>
 
       <div v-if="authError" class="offline-banner">
-        🔐 Ошибка входа Telegram. Открой игру через бота
-        <a href="https://t.me/game_alikhan_bot" target="_blank" rel="noopener">@game_alikhan_bot</a>
-        → «Открыть ALIHAN QUEST». Не через личный @A_7l_i.
+        🔐 Не удалось войти через Telegram. Закрой Mini App полностью и открой снова через @game_alikhan_bot.
       </div>
       <div v-else-if="!apiOnline" class="offline-banner">
         📡 Нет связи с сервером — проверь, что Django и cloudflared запущены.
