@@ -336,9 +336,10 @@ window.QuestAPI = {
     return this.getTodayQuests();
   },
 
-  async addQuest(payload) {
-    await apiFetch('/quests/manual/', { method: 'POST', body: JSON.stringify(payload) });
-    return (await this.getTodayQuests()).data;
+  async addQuest(payload, options = {}) {
+    const body = { ...(payload || {}) };
+    if (options.date) body.date = options.date;
+    return await apiFetch('/quests/manual/', { method: 'POST', body: JSON.stringify(body) });
   },
 
   async patchQuest(id, payload) {
@@ -507,6 +508,26 @@ window.QuestAPI = {
       method: 'PATCH',
       body: JSON.stringify({ habits }),
     });
+  },
+
+  async getHabits() {
+    return await apiFetch('/habits/');
+  },
+
+  async createHabit(payload) {
+    return await apiFetch('/habits/', { method: 'POST', body: JSON.stringify(payload) });
+  },
+
+  async updateHabit(id, payload) {
+    return await apiFetch(`/habits/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
+  async deleteHabit(id) {
+    return await apiFetch(`/habits/${id}/`, { method: 'DELETE' });
+  },
+
+  async getGameHabitsToday() {
+    return await apiFetch('/habits/game/today/');
   },
 
   async createGoal(payload) {

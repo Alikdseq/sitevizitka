@@ -106,8 +106,8 @@ createApp({
     const importReplace = ref(false);
     const swipe = ref({ id: null, startX: 0, startY: 0, deltaX: 0 });
     const syncInfo = ref(null);
-    const showKpiEdit = ref(false);
     const showAddQuest = ref(false);
+    const questAddTargetDate = ref('');
     const showEditQuest = ref(false);
     const showGoalAdd = ref(false);
     const editingGoalId = ref(null);
@@ -120,21 +120,27 @@ createApp({
     const celebrationPayload = ref(null);
 
     const showOnboarding = ref(false);
-    const onboardingStep = ref('welcome');
+    const wizardScreen = ref('welcome_name');
     const onboardingName = ref('');
     const onboardingStats = ref([]);
     const onboardingHabits = ref([]);
+    const wizardDraftStat = ref({ emoji: '⭐', label: '', xp_per_level: 1000, key: '' });
+    const wizardDraftHabit = ref({ title: '', stat_key: '', xp_reward: 40 });
     const statPresets = ref([]);
 
+    const playerHabits = ref([]);
+    const gameHabits = ref([]);
+    const showHabitSheet = ref(false);
+    const habitForm = ref({ title: '', stat_key: '', xp_reward: 40, generates_daily_quest: true });
+    const editingHabitId = ref(null);
+
+    const showStatSheet = ref(false);
+    const statSheetForm = ref({});
+    const statSheetOriginalKey = ref('');
+
     const analyticsData = ref(null);
-    const showStatEdit = ref(false);
-    const statEditForm = ref([]);
 
     const leagueData = ref(null);
-    const growthPath = ref(null);
-    const showGrowthNode = ref(false);
-    const activeGrowthNode = ref(null);
-    const growthReflection = ref({ summary: '' });
 
     const clanData = ref(null);
     const clanForm = ref({ name: '', invite_code: '', stat_focus: 'discipline' });
@@ -147,7 +153,6 @@ createApp({
     const reflection = ref(emptyReflection());
     const progressNotes = ref('');
 
-    const kpiForm = ref({});
     const questForm = ref({ title: '', stat_key: 'discipline', xp_reward: 30, due_time: '' });
 
     const displayProfile = computed(() => ensureProfile(profile.value));
@@ -363,14 +368,6 @@ createApp({
       }
     }
 
-    async function loadGrowth() {
-      try {
-        growthPath.value = await QuestAPI.getGrowthPath('discipline');
-      } catch {
-        growthPath.value = null;
-      }
-    }
-
     async function loadClan() {
       try {
         const data = await QuestAPI.getClan();
@@ -459,125 +456,317 @@ createApp({
       } catch { showToast('Ошибка'); }
     }
 
-    function growthNodeIcon(node) {
-      if (node.node_type === 'boss') return '👹';
-      if (node.node_type === 'milestone') return '🏁';
-      return '📘';
-    }
-
-    function growthNodeClass(node) {
-      return {
-        'growth-node-done': node.status === 'completed',
-        'growth-node-active': node.status === 'available' || node.status === 'in_progress',
-        'growth-node-locked': node.status === 'locked',
-      };
-    }
-
-    async function openGrowthNode(node) {
-      if (node.status === 'locked' || node.status === 'completed') return;
-      activeGrowthNode.value = node;
-      growthReflection.value = { summary: '' };
-      if (node.status === 'available') {
-        try { await QuestAPI.startGrowthNode(node.id); } catch { /* offline */ }
-      }
-      showGrowthNode.value = true;
-    }
-
-    async function submitGrowthNode() {
-      if (!activeGrowthNode.value?.id) return;
-      if ((growthReflection.value.summary || '').trim().length < 10) {
-        showToast('Итог от 10 символов');
-        return;
-      }
-      try {
-        const result = await QuestAPI.completeGrowthNode(activeGrowthNode.value.id, growthReflection.value);
-        showGrowthNode.value = false;
-        playCelebration(result?.celebration?.animations || ['xp_burst']);
-        showToast(`+${result.xp_gained} XP · Путь роста`);
-        await Promise.all([refresh(), loadGrowth()]);
-      } catch {
-        showToast('Нет связи с сервером');
-      }
-    }
-
     function switchTab(name) {
       tab.value = name;
     }
+
+    const WIZARD_PROGRESS = {
+      welcome_name: 8, welcome_intro: 16, stats_intro: 24, stats_list: 32,
+      stat_emoji: 36, stat_label: 40, stat_confirm: 44,
+      stats_done: 50, habits_intro: 58, habits_list: 66,
+      habit_title: 72, habit_stat: 78, habit_xp: 84, habit_confirm: 90,
+    };
+
+    const wizardProgressPct = computed(() => WIZARD_PROGRESS[wizardScreen.value] || 10);
 
     async function initOnboarding() {
       try {
         const data = await QuestAPI.getOnboarding();
         statPresets.value = data.presets || [];
         if (!data.completed) {
-          onboardingStep.value = data.step || 'welcome';
+          wizardScreen.value = data.step === 'stats' ? 'stats_intro'
+            : data.step === 'habits' ? 'habits_intro'
+            : 'welcome_name';
           onboardingName.value = displayProfile.value.display_name || '';
-          onboardingStats.value = (data.stats?.length ? data.stats : statPresets.value.slice(0, 4)).map((s) => ({ ...s }));
-          onboardingHabits.value = data.habits?.length ? [...data.habits] : [];
+          onboardingStats.value = data.stats?.length ? data.stats.map((s) => ({ ...s })) : [];
+          onboardingHabits.value = data.habits?.length ? data.habits.map((h) => ({ ...h })) : [];
           showOnboarding.value = true;
         }
       } catch { /* offline */ }
     }
 
-    function addOnboardingStat(preset) {
-      const item = preset || { emoji: '⭐', label: 'Новая', key: `custom_${Date.now()}`, xp_per_level: 1000 };
-      onboardingStats.value.push({ ...item, key: item.key || `custom_${onboardingStats.value.length}` });
+    function wizardBack() {
+      const back = {
+        welcome_intro: 'welcome_name',
+        stats_intro: 'welcome_intro',
+        stats_list: 'stats_intro',
+        stat_emoji: 'stats_list',
+        stat_label: 'stat_emoji',
+        stat_confirm: 'stat_label',
+        stats_done: 'stats_list',
+        habits_intro: 'stats_done',
+        habits_list: 'habits_intro',
+        habit_title: 'habits_list',
+        habit_stat: 'habit_title',
+        habit_xp: 'habit_stat',
+        habit_confirm: 'habit_xp',
+      };
+      if (back[wizardScreen.value]) wizardScreen.value = back[wizardScreen.value];
     }
 
-    function removeOnboardingStat(idx) {
+    function startWizardAddStat(preset) {
+      const item = preset
+        ? { emoji: preset.emoji, label: preset.label, xp_per_level: preset.xp_per_level || 1000, key: preset.key }
+        : { emoji: '⭐', label: '', xp_per_level: 1000, key: `custom_${Date.now()}` };
+      wizardDraftStat.value = { ...item };
+      wizardScreen.value = preset ? 'stat_confirm' : 'stat_emoji';
+    }
+
+    function confirmWizardStat() {
+      const d = wizardDraftStat.value;
+      if (!d.label?.trim()) { showToast('Введите название'); return; }
+      const entry = {
+        emoji: d.emoji || '⭐',
+        label: d.label.trim(),
+        xp_per_level: d.xp_per_level || 1000,
+        key: d.key || slugifyStatKey(d.label),
+      };
+      onboardingStats.value.push(entry);
+      wizardScreen.value = 'stats_list';
+    }
+
+    function slugifyStatKey(label) {
+      return (label || 'stat').toLowerCase().replace(/[^\w\s-]/g, '').replace(/\s+/g, '_').slice(0, 28) || `custom_${Date.now()}`;
+    }
+
+    function removeWizardStat(idx) {
       onboardingStats.value.splice(idx, 1);
     }
 
-    function addOnboardingHabit() {
-      const key = onboardingStats.value[0]?.key || 'discipline';
-      onboardingHabits.value.push({ title: '', stat_key: key, xp_reward: 40, generates_daily_quest: true });
+    function startWizardAddHabit() {
+      wizardDraftHabit.value = {
+        title: '',
+        stat_key: onboardingStats.value[0]?.key || statKeys.value[0] || 'discipline',
+        xp_reward: 40,
+      };
+      wizardScreen.value = 'habit_title';
     }
 
-    async function submitOnboardingStep() {
+    function confirmWizardHabit() {
+      const d = wizardDraftHabit.value;
+      if (!d.title?.trim()) { showToast('Введите название привычки'); return; }
+      onboardingHabits.value.push({
+        title: d.title.trim(),
+        stat_key: d.stat_key,
+        xp_reward: Number(d.xp_reward) || 40,
+        generates_daily_quest: true,
+      });
+      wizardScreen.value = 'habits_list';
+    }
+
+    async function saveWizardStatsBatch() {
+      if (!onboardingStats.value.length) { showToast('Добавь хотя бы одну характеристику'); return false; }
       try {
-        let payload = {};
-        if (onboardingStep.value === 'welcome') {
-          if (!onboardingName.value.trim()) { showToast('Введите имя героя'); return; }
-          payload = { display_name: onboardingName.value.trim() };
-        } else if (onboardingStep.value === 'stats') {
-          if (!onboardingStats.value.length) { showToast('Выберите хотя бы одну характеристику'); return; }
-          payload = { stats: onboardingStats.value };
-        } else if (onboardingStep.value === 'habits') {
-          payload = { habits: onboardingHabits.value.filter((h) => h.title?.trim()) };
-        }
-        const data = await QuestAPI.saveOnboardingStep(onboardingStep.value, payload);
-        onboardingStep.value = data.step || onboardingStep.value;
-        if (onboardingStep.value === 'complete') {
-          await QuestAPI.saveOnboardingStep('complete', {});
-          showOnboarding.value = false;
-          await refresh();
-          showToast('Добро пожаловать в игру! 🎮');
-          return;
-        }
+        await QuestAPI.saveOnboardingStep('stats', { stats: onboardingStats.value });
+        return true;
       } catch {
         showToast('Ошибка сохранения');
+        return false;
       }
     }
 
-    function addStatRow() {
-      statEditForm.value.push({ emoji: '⭐', label: 'Новая', key: `custom_${Date.now()}`, xp_per_level: 1000 });
-    }
-
-    function removeStatRow(idx) {
-      statEditForm.value.splice(idx, 1);
-    }
-
-    function openStatEdit() {
-      statEditForm.value = (displayProfile.value.stat_definitions || []).map((s) => ({ ...s }));
-      showStatEdit.value = true;
-    }
-
-    async function saveStatEdit() {
+    async function saveWizardHabitsBatch(skip = false) {
       try {
-        const result = await QuestAPI.updateStatConfig(statEditForm.value);
+        await QuestAPI.saveOnboardingStep('habits', skip ? { skip: true, habits: [] } : { habits: onboardingHabits.value });
+        return true;
+      } catch {
+        showToast('Ошибка сохранения');
+        return false;
+      }
+    }
+
+    async function finishWizard() {
+      try {
+        await QuestAPI.saveOnboardingStep('complete', {});
+        showOnboarding.value = false;
+        await refresh();
+        showToast('Добро пожаловать в игру! 🎮');
+      } catch {
+        showToast('Ошибка завершения');
+      }
+    }
+
+    async function wizardPrimaryAction() {
+      const s = wizardScreen.value;
+      if (s === 'welcome_name') {
+        if (!onboardingName.value.trim()) { showToast('Введите имя героя'); return; }
+        await QuestAPI.saveOnboardingStep('welcome', { display_name: onboardingName.value.trim() });
+        wizardScreen.value = 'welcome_intro';
+      } else if (s === 'welcome_intro') {
+        wizardScreen.value = 'stats_intro';
+      } else if (s === 'stats_intro') {
+        wizardScreen.value = 'stats_list';
+      } else if (s === 'stats_list') {
+        if (await saveWizardStatsBatch()) wizardScreen.value = 'stats_done';
+      } else if (s === 'stats_done') {
+        wizardScreen.value = 'habits_intro';
+      } else if (s === 'habits_intro') {
+        wizardScreen.value = 'habits_list';
+      } else if (s === 'habits_list') {
+        if (await saveWizardHabitsBatch(false)) await finishWizard();
+      } else if (s === 'stat_emoji') {
+        wizardScreen.value = 'stat_label';
+      } else if (s === 'stat_label') {
+        if (!wizardDraftStat.value.label?.trim()) { showToast('Введите название'); return; }
+        wizardScreen.value = 'stat_confirm';
+      } else if (s === 'stat_confirm') {
+        confirmWizardStat();
+      } else if (s === 'habit_title') {
+        if (!wizardDraftHabit.value.title?.trim()) { showToast('Введите название'); return; }
+        wizardDraftHabit.value.stat_key = onboardingStats.value[0]?.key || statKeys.value[0] || 'discipline';
+        wizardScreen.value = 'habit_stat';
+      } else if (s === 'habit_stat') {
+        wizardScreen.value = 'habit_xp';
+      } else if (s === 'habit_xp') {
+        wizardScreen.value = 'habit_confirm';
+      } else if (s === 'habit_confirm') {
+        confirmWizardHabit();
+      }
+    }
+
+    async function skipWizardHabits() {
+      if (await saveWizardHabitsBatch(true)) await finishWizard();
+    }
+
+    async function loadHabits() {
+      try {
+        const [h, g] = await Promise.all([
+          QuestAPI.getHabits(),
+          QuestAPI.getGameHabitsToday(),
+        ]);
+        playerHabits.value = h?.habits || [];
+        gameHabits.value = g?.game_habits || [];
+      } catch {
+        playerHabits.value = displayProfile.value?.habits || [];
+        gameHabits.value = [];
+      }
+    }
+
+    function openHabitAdd() {
+      editingHabitId.value = null;
+      habitForm.value = {
+        title: '',
+        stat_key: statKeys.value[0] || 'discipline',
+        xp_reward: 40,
+        generates_daily_quest: true,
+      };
+      showHabitSheet.value = true;
+    }
+
+    function openHabitEdit(h) {
+      editingHabitId.value = h.id;
+      habitForm.value = {
+        title: h.title || '',
+        stat_key: h.stat_key || statKeys.value[0],
+        xp_reward: Number(h.xp_reward) || 40,
+        generates_daily_quest: h.generates_daily_quest !== false,
+      };
+      showHabitSheet.value = true;
+    }
+
+    async function saveHabitSheet() {
+      if (!habitForm.value.title?.trim()) { showToast('Введите название'); return; }
+      const payload = {
+        title: habitForm.value.title.trim(),
+        stat_key: habitForm.value.stat_key,
+        xp_reward: Number(habitForm.value.xp_reward) || 40,
+        generates_daily_quest: Boolean(habitForm.value.generates_daily_quest),
+      };
+      try {
+        if (editingHabitId.value) {
+          await QuestAPI.updateHabit(editingHabitId.value, payload);
+        } else {
+          await QuestAPI.createHabit(payload);
+        }
+        showHabitSheet.value = false;
+        await loadHabits();
+        await refresh();
+        showToast('Привычка сохранена ✓');
+      } catch {
+        showToast('Не удалось сохранить');
+      }
+    }
+
+    async function deleteHabitAction() {
+      if (!editingHabitId.value) return;
+      try {
+        await QuestAPI.deleteHabit(editingHabitId.value);
+        showHabitSheet.value = false;
+        await loadHabits();
+        showToast('Привычка удалена');
+      } catch {
+        showToast('Не удалось удалить');
+      }
+    }
+
+    function openStatCard(key) {
+      const def = (displayProfile.value.stat_definitions || []).find((d) => d.key === key);
+      if (!def) return;
+      statSheetOriginalKey.value = key;
+      statSheetForm.value = {
+        key: def.key,
+        emoji: def.emoji || '⭐',
+        label: def.label || '',
+        xp_per_level: def.xp_per_level || 1000,
+      };
+      showStatSheet.value = true;
+    }
+
+    async function saveStatSheet() {
+      if (!statSheetForm.value.label?.trim()) { showToast('Введите название'); return; }
+      const stats = (displayProfile.value.stat_definitions || []).map((s) => (
+        s.key === statSheetOriginalKey.value
+          ? { ...s, ...statSheetForm.value, label: statSheetForm.value.label.trim() }
+          : { ...s }
+      ));
+      try {
+        const result = await QuestAPI.updateStatConfig(stats);
         if (result.profile) profile.value = ensureProfile(result.profile);
         else await refresh();
-        showStatEdit.value = false;
-        showToast('Характеристики сохранены ✓');
+        showStatSheet.value = false;
+        showToast('Сохранено ✓');
+      } catch {
+        showToast('Не удалось сохранить');
+      }
+    }
+
+    async function deleteStatSheet() {
+      const stats = (displayProfile.value.stat_definitions || [])
+        .filter((s) => s.key !== statSheetOriginalKey.value)
+        .map((s) => ({ ...s }));
+      if (!window.confirm('Удалить эту характеристику? XP сохранится на сервере.')) return;
+      try {
+        const result = await QuestAPI.updateStatConfig(stats);
+        if (result.profile) profile.value = ensureProfile(result.profile);
+        else await refresh();
+        showStatSheet.value = false;
+        showToast('Удалено');
+      } catch {
+        showToast('Не удалось удалить');
+      }
+    }
+
+    function openStatAdd() {
+      statSheetOriginalKey.value = '';
+      statSheetForm.value = { key: `custom_${Date.now()}`, emoji: '⭐', label: '', xp_per_level: 1000 };
+      showStatSheet.value = true;
+    }
+
+    async function saveNewStatSheet() {
+      if (!statSheetForm.value.label?.trim()) { showToast('Введите название'); return; }
+      const entry = {
+        key: statSheetForm.value.key || slugifyStatKey(statSheetForm.value.label),
+        emoji: statSheetForm.value.emoji || '⭐',
+        label: statSheetForm.value.label.trim(),
+        xp_per_level: Number(statSheetForm.value.xp_per_level) || 1000,
+      };
+      const stats = [...(displayProfile.value.stat_definitions || []).map((s) => ({ ...s })), entry];
+      try {
+        const result = await QuestAPI.updateStatConfig(stats);
+        if (result.profile) profile.value = ensureProfile(result.profile);
+        else await refresh();
+        showStatSheet.value = false;
+        showToast('Добавлено ✓');
       } catch {
         showToast('Не удалось сохранить');
       }
@@ -600,23 +789,6 @@ createApp({
       }
     }
 
-    function openKpiEdit() {
-      const kpi = (profile.value || QuestAPI.cachedProfile()).kpi || {};
-      kpiForm.value = { ...kpi };
-      showKpiEdit.value = true;
-    }
-
-    async function saveKpi() {
-      try {
-        const result = await QuestAPI.updateProfile({ kpi: { ...kpiForm.value } });
-        profile.value = ensureProfile(result.data);
-        showKpiEdit.value = false;
-        showToast('KPI сохранены ✓');
-      } catch {
-        showToast('Нет связи с сервером — KPI не сохранены');
-      }
-    }
-
     function fmtDueTime(value) {
       if (!value) return '';
       return String(value).slice(0, 5);
@@ -634,8 +806,24 @@ createApp({
     }
 
     function openAddQuest() {
-      questForm.value = { title: '', stat_key: 'discipline', xp_reward: 30, due_time: '' };
+      questAddTargetDate.value = '';
+      questForm.value = { title: '', stat_key: statKeys.value[0] || 'discipline', xp_reward: 30, due_time: '' };
       showAddQuest.value = true;
+    }
+
+    function openAddQuestForJournal() {
+      if (!selectedDate.value) {
+        showToast('Сначала выбери день в календаре');
+        return;
+      }
+      questAddTargetDate.value = selectedDate.value;
+      questForm.value = { title: '', stat_key: statKeys.value[0] || 'discipline', xp_reward: 30, due_time: '' };
+      showAddQuest.value = true;
+    }
+
+    function closeAddQuestModal() {
+      showAddQuest.value = false;
+      questAddTargetDate.value = '';
     }
 
     function openEditQuest(q) {
@@ -654,11 +842,23 @@ createApp({
         showToast('Введите название');
         return;
       }
+      const targetDate = questAddTargetDate.value || '';
       try {
-        const pack = await QuestAPI.addQuest(questPayloadFromForm());
-        if (pack) questPack.value = pack;
-        showAddQuest.value = false;
-        showToast('Квест добавлен ✓');
+        await QuestAPI.addQuest(questPayloadFromForm(), targetDate ? { date: targetDate } : {});
+        closeAddQuestModal();
+        if (targetDate) {
+          await loadJournalDay(targetDate);
+          await loadCalendar();
+          if (targetDate === todayStr()) {
+            const q = await QuestAPI.getTodayQuests();
+            if (q.online && q.data) questPack.value = q.data;
+          }
+          showToast(`Задача добавлена на ${targetDate} ✓`);
+        } else {
+          const q = await QuestAPI.getTodayQuests();
+          if (q.online && q.data) questPack.value = q.data;
+          showToast('Квест добавлен ✓');
+        }
       } catch {
         showToast('Нет связи с сервером — задача не сохранена');
       }
@@ -1008,7 +1208,7 @@ createApp({
     watch(tab, async (name) => {
       if (name === 'quests' || name === 'home') await refresh();
       if (name === 'league') await loadLeague();
-      if (name === 'growth') await loadGrowth();
+      if (name === 'habits') await loadHabits();
       if (name === 'clan') await loadClan();
       if (name === 'shop') await loadShop();
       if (name === 'journal') {
@@ -1042,17 +1242,19 @@ createApp({
 
     return {
       tab, profile, displayProfile, questPack, apiOnline, authError, toast, swipe, syncInfo,
-      showReflect, showImport, importReplace, showKpiEdit, showAddQuest, showEditQuest,
+      showReflect, showImport, importReplace, showAddQuest, showEditQuest,
       showGoalAdd, showQuestDetail, showChestLoot, showEveningChest,
-      showGrowthNode, activeGrowthNode, growthReflection,
       celebrationFx, celebrationPayload,
-      showOnboarding, onboardingStep, onboardingName, onboardingStats, onboardingHabits, statPresets,
-      analyticsData, showStatEdit, statEditForm,
-      leagueData, growthPath,
+      showOnboarding, wizardScreen, onboardingName, onboardingStats, onboardingHabits,
+      wizardDraftStat, wizardDraftHabit, wizardProgressPct, statPresets,
+      playerHabits, gameHabits, showHabitSheet, habitForm, editingHabitId,
+      showStatSheet, statSheetForm, statSheetOriginalKey,
+      analyticsData,
+      leagueData,
       clanData, clanForm, shopThemes, subscription,
       chestSummary, victoryProgressPct, readyChests,
       activeQuest, detailQuest, importJson, reflection, progressNotes,
-      kpiForm, questForm, goalForm, editingGoalId,
+      questForm, goalForm, editingGoalId,
       calendarYear, calendarMonth, calendarData, selectedDate, journalQuests,
       xpPercent, questsByStat, pendingCount, statKeys,
       statLabel, statRule,
@@ -1061,14 +1263,16 @@ createApp({
       QuestAPI,
       fmtMoney, fmtNum, fmtDueTime, pct, showToast, switchTab, refresh,
       playCelebration, openReadyChest, claimMorning, openEveningChestModal, submitEveningChest,
-      loadLeague, loadGrowth, loadJournalInsights, growthNodeIcon, growthNodeClass, openGrowthNode, submitGrowthNode,
-      initOnboarding, submitOnboardingStep, addOnboardingStat, removeOnboardingStat, addOnboardingHabit,
-      openStatEdit, saveStatEdit, addStatRow, removeStatRow,
+      loadLeague, loadJournalInsights, loadHabits,
+      initOnboarding, wizardBack, wizardPrimaryAction, skipWizardHabits,
+      startWizardAddStat, removeWizardStat, startWizardAddHabit,
+      openStatCard, saveStatSheet, deleteStatSheet, openStatAdd, saveNewStatSheet,
+      openHabitAdd, openHabitEdit, saveHabitSheet, deleteHabitAction,
       openGoalAdd, openGoalEditGoal, saveGoalForm, deleteGoalAction, goalProgressLabel, statProgress,
       loadClan, loadShop, createClanAction, joinClanAction, leaveClanAction,
       activateThemeAction, checkoutProAction, useGraceAction,
-      openKpiEdit, saveKpi,
-      openAddQuest, openEditQuest, saveNewQuest, saveEditedQuest, removeQuest, deferQuestToTomorrow,
+      openAddQuest, openAddQuestForJournal, closeAddQuestModal, questAddTargetDate,
+      openEditQuest, saveNewQuest, saveEditedQuest, removeQuest, deferQuestToTomorrow,
       onQuestTouchStart, onQuestTouchMove, onQuestTouchEnd, questSwipeStyle,
       openQuest, saveQuestNotes, submitQuest, openImport, openReplaceImport, doImport, loadSampleImport,
       loadCalendar, calDayClass, selectCalendarDay, loadJournalDay,
@@ -1108,9 +1312,20 @@ createApp({
         🗄 БД · player #{{ syncInfo.player_id }} · {{ syncInfo.quest_count }} задач ({{ syncInfo.manual_count || 0 }} вручную) · бот видит то же
       </div>
 
+      <header v-if="tab !== 'journal'" class="app-top-bar">
+        <button type="button" class="top-bar-btn" @click="switchTab('journal')">📅 Журнал</button>
+      </header>
+
       <main class="main-content">
         <!-- HOME -->
-        <section v-if="tab==='home'" class="screen">
+        <section v-if="tab==='home'" class="screen screen-home">
+          <div class="home-side-dock home-side-left">
+            <button type="button" class="side-btn" title="Магазин" @click="switchTab('shop')">🛒</button>
+          </div>
+          <div class="home-side-dock home-side-right">
+            <button type="button" class="side-btn" title="Лига" @click="switchTab('league')">🥇</button>
+            <button type="button" class="side-btn" title="Клан" @click="switchTab('clan')">⚔️</button>
+          </div>
           <div class="hero-card">
             <div class="hero-name">{{ displayProfile.display_name }}</div>
             <div class="hero-level">УРОВЕНЬ {{ displayProfile.level }}</div>
@@ -1173,57 +1388,14 @@ createApp({
             <span v-else-if="displayProfile.league.in_demotion_zone" class="zone-badge demote">↓</span>
           </div>
 
-          <div class="section-head-row">
-            <div class="section-head">📈 KPI</div>
-            <button type="button" class="edit-btn" @click="openKpiEdit">✏️ Редактировать</button>
-          </div>
-
-          <div class="kpi-grid">
-            <div class="kpi">
-              <div class="kpi-icon">💰</div>
-              <div class="kpi-label">Капитал</div>
-              <div class="kpi-value">{{ fmtMoney(displayProfile.kpi.capital_season) }}</div>
-              <div class="kpi-sub">цель {{ fmtMoney(displayProfile.kpi.capital_goal) }}</div>
-              <div class="progress-mini"><div class="progress-mini-fill" :style="{width: pct(displayProfile.kpi.capital_season, displayProfile.kpi.capital_goal)+'%'}"></div></div>
+          <div v-if="displayProfile.goals?.length" class="section-head" style="margin-top:16px">🎯 Ближайшие цели</div>
+          <div v-for="g in (displayProfile.goals || []).slice(0, 3)" :key="g.id" class="goal-block" @click="switchTab('goals')">
+            <div class="goal-block-head">
+              <h4>{{ g.emoji || '🎯' }} {{ g.title }}</h4>
             </div>
-            <div class="kpi">
-              <div class="kpi-icon">🚀</div>
-              <div class="kpi-label">МаБибип</div>
-              <div class="kpi-value">{{ profile.kpi.mabibip_users }} / {{ profile.kpi.mabibip_goal }}</div>
-              <div class="progress-mini"><div class="progress-mini-fill" :style="{width: pct(profile.kpi.mabibip_users, profile.kpi.mabibip_goal)+'%'}"></div></div>
-            </div>
-            <div class="kpi">
-              <div class="kpi-icon">🎥</div>
-              <div class="kpi-label">Instagram</div>
-              <div class="kpi-value">{{ fmtNum(profile.kpi.instagram_followers) }}</div>
-              <div class="kpi-sub">/ {{ fmtNum(profile.kpi.instagram_goal) }}</div>
-              <div class="progress-mini"><div class="progress-mini-fill" :style="{width: pct(profile.kpi.instagram_followers, profile.kpi.instagram_goal)+'%'}"></div></div>
-            </div>
-            <div class="kpi">
-              <div class="kpi-icon">💼</div>
-              <div class="kpi-label">Бизнес</div>
-              <div class="kpi-value">{{ profile.kpi.business_projects }} проектов</div>
-            </div>
-            <div class="kpi">
-              <div class="kpi-icon">🧠</div>
-              <div class="kpi-label">Навыки</div>
-              <div class="kpi-value">{{ profile.kpi.skills_count }}</div>
-            </div>
-            <div class="kpi">
-              <div class="kpi-icon">🤝</div>
-              <div class="kpi-label">Контакты</div>
-              <div class="kpi-value">{{ profile.kpi.contacts_count }}</div>
-            </div>
-            <div class="kpi">
-              <div class="kpi-icon">💪</div>
-              <div class="kpi-label">Форма</div>
-              <div class="kpi-value">{{ profile.kpi.form_sessions }} разминок</div>
-            </div>
-            <div class="kpi">
-              <div class="kpi-icon">⚖️</div>
-              <div class="kpi-label">Вес</div>
-              <div class="kpi-value">{{ profile.kpi.weight_kg }} кг</div>
-              <div class="kpi-sub">цель {{ profile.kpi.weight_goal_kg }} кг</div>
+            <p class="goal-text">{{ goalProgressLabel(g) }}</p>
+            <div v-if="g.target_value" class="progress-mini goal-progress">
+              <div class="progress-mini-fill" :style="{width: pct(g.current_value, g.target_value)+'%'}"></div>
             </div>
           </div>
         </section>
@@ -1310,35 +1482,41 @@ createApp({
           </template>
         </section>
 
-        <!-- GROWTH -->
-        <section v-else-if="tab==='growth'" class="screen">
-          <div class="section-head">🌱 Путь роста</div>
-          <div v-if="!growthPath" class="empty-state"><p>Загрузка...</p></div>
-          <template v-else>
-            <div class="growth-intro card">
-              <h3>{{ growthPath.title }}</h3>
-              <p>{{ growthPath.description }}</p>
+        <!-- HABITS -->
+        <section v-else-if="tab==='habits'" class="screen">
+          <div class="section-head">🌱 Привычки</div>
+          <p class="rule-text">Свои ежедневные привычки + сюрпризы от игры каждый день.</p>
+
+          <div class="habit-block">
+            <div class="section-head-row">
+              <div class="section-head progress-subhead">⚡ Мои привычки</div>
+              <button type="button" class="edit-btn" @click="openHabitAdd">+ Добавить</button>
             </div>
-            <div v-for="unit in growthPath.units" :key="unit.id" class="growth-unit card">
-              <div class="growth-unit-title">{{ unit.title }}</div>
-              <p class="growth-unit-desc">{{ unit.description }}</p>
-              <div class="growth-nodes">
-                <button
-                  v-for="node in unit.nodes"
-                  :key="node.id"
-                  type="button"
-                  class="growth-node"
-                  :class="growthNodeClass(node)"
-                  :disabled="node.status === 'locked'"
-                  @click="openGrowthNode(node)"
-                >
-                  <span class="growth-node-icon">{{ growthNodeIcon(node) }}</span>
-                  <span class="growth-node-title">{{ node.title }}</span>
-                  <span class="growth-node-xp">+{{ node.xp_reward }} XP</span>
-                </button>
+            <div v-if="!playerHabits.length" class="empty-state">
+              <p>Добавь привычки — из них создадутся ежедневные квесты.</p>
+            </div>
+            <div v-for="h in playerHabits" :key="h.id" class="habit-card" @click="openHabitEdit(h)">
+              <span class="habit-emoji">⚡</span>
+              <div class="habit-body">
+                <div class="habit-title">{{ h.title }}</div>
+                <div class="habit-meta">+{{ h.xp_reward }} XP · {{ statLabel(h.stat_key) }}</div>
               </div>
             </div>
-          </template>
+          </div>
+
+          <div class="habit-block">
+            <div class="section-head progress-subhead">🎲 Привычки от игры</div>
+            <p class="rule-text">Каждый день — что-то новое. Выполняй как обычный квест.</p>
+            <div v-if="!gameHabits.length" class="empty-state"><p>Загрузка...</p></div>
+            <div v-for="gh in gameHabits" :key="gh.id" class="habit-card game-habit">
+              <span class="habit-emoji">{{ gh.emoji || '🎲' }}</span>
+              <div class="habit-body">
+                <div class="habit-title">{{ gh.title }}</div>
+                <div class="habit-meta">+{{ gh.xp_reward }} XP · {{ statLabel(gh.stat_key) }}</div>
+              </div>
+              <span class="habit-badge">ИГРА</span>
+            </div>
+          </div>
         </section>
 
         <!-- CLAN -->
@@ -1415,10 +1593,10 @@ createApp({
         <section v-else-if="tab==='stats'" class="screen">
           <div class="section-head-row">
             <div class="section-head">📊 Характеристики</div>
-            <button type="button" class="edit-btn" @click="openStatEdit">✏️ Настроить</button>
+            <button type="button" class="edit-btn" @click="openStatAdd">+ Добавить</button>
           </div>
-          <div class="stat-grid">
-            <div v-for="key in statKeys" :key="key" class="stat-card">
+          <div class="stat-grid stat-grid-full">
+            <div v-for="key in statKeys" :key="key" class="stat-card stat-card-tap" @click="openStatCard(key)">
               <div class="stat-card-head">
                 <div class="icon">{{ (statLabel(key) || '⭐').split(' ')[0] }}</div>
                 <span class="stat-level">УР. {{ displayProfile.stats_levels?.[key] ?? 0 }}</span>
@@ -1480,7 +1658,10 @@ createApp({
             </template>
           </div>
           <div v-if="selectedDate" class="journal-day-panel">
-            <div class="section-head">📋 {{ selectedDate }}</div>
+            <div class="section-head-row">
+              <div class="section-head">📋 {{ selectedDate }}</div>
+              <button type="button" class="edit-btn" @click="openAddQuestForJournal">+ Добавить</button>
+            </div>
             <div v-if="journalQuests.main_mission" class="quest-mission">
               🔥 {{ journalQuests.main_mission }}
             </div>
@@ -1531,16 +1712,12 @@ createApp({
 
       </main>
 
-      <nav class="bottom-nav bottom-nav-scroll">
-        <button type="button" class="nav-item" :class="{active: tab==='home'}" @click="switchTab('home')"><span class="ico">🏠</span>Главная</button>
-        <button type="button" class="nav-item" :class="{active: tab==='quests'}" @click="switchTab('quests')"><span class="ico">⚔️</span>Квесты</button>
-        <button type="button" class="nav-item" :class="{active: tab==='journal'}" @click="switchTab('journal')"><span class="ico">📅</span>Журнал</button>
-        <button type="button" class="nav-item" :class="{active: tab==='growth'}" @click="switchTab('growth')"><span class="ico">🌱</span>Рост</button>
-        <button type="button" class="nav-item" :class="{active: tab==='league'}" @click="switchTab('league')"><span class="ico">🥇</span>Лига</button>
-        <button type="button" class="nav-item" :class="{active: tab==='clan'}" @click="switchTab('clan')"><span class="ico">⚔️</span>Клан</button>
-        <button type="button" class="nav-item" :class="{active: tab==='shop'}" @click="switchTab('shop')"><span class="ico">🛒</span>Магазин</button>
-        <button type="button" class="nav-item" :class="{active: tab==='stats'}" @click="switchTab('stats')"><span class="ico">📊</span>Статы</button>
-        <button type="button" class="nav-item" :class="{active: tab==='goals'}" @click="switchTab('goals')"><span class="ico">🎯</span>Цели</button>
+      <nav class="bottom-nav-cr">
+        <button type="button" class="nav-cr-side" :class="{active: tab==='quests'}" @click="switchTab('quests')"><span class="ico">⚔️</span>Квесты</button>
+        <button type="button" class="nav-cr-side" :class="{active: tab==='stats'}" @click="switchTab('stats')"><span class="ico">📊</span>Статы</button>
+        <button type="button" class="nav-cr-center" :class="{active: tab==='home'}" @click="switchTab('home')"><span class="ico">🏠</span>Главная</button>
+        <button type="button" class="nav-cr-side" :class="{active: tab==='habits'}" @click="switchTab('habits')"><span class="ico">🌱</span>Привычки</button>
+        <button type="button" class="nav-cr-side" :class="{active: tab==='goals'}" @click="switchTab('goals')"><span class="ico">🎯</span>Цели</button>
       </nav>
       <!-- Work on quest / Complete -->
       <div v-if="showReflect" class="modal-overlay" @click.self="showReflect=false">
@@ -1589,27 +1766,11 @@ createApp({
         </div>
       </div>
 
-      <!-- KPI Edit -->
-      <div v-if="showKpiEdit" class="modal-overlay" @click.self="showKpiEdit=false">
-        <div class="modal">
-          <h3>✏️ Редактировать KPI</h3>
-          <div class="form-grid">
-            <div v-for="f in KPI_FIELDS" :key="f.key" class="field">
-              <label>{{ f.label }}</label>
-              <input v-model.number="kpiForm[f.key]" :type="f.type || 'number'" :step="f.step || '1'">
-            </div>
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" @click="showKpiEdit=false">Отмена</button>
-            <button type="button" class="btn btn-primary" @click="saveKpi">Сохранить</button>
-          </div>
-        </div>
-      </div>
-
       <!-- Add Quest -->
-      <div v-if="showAddQuest" class="modal-overlay" @click.self="showAddQuest=false">
+      <div v-if="showAddQuest" class="modal-overlay" @click.self="closeAddQuestModal">
         <div class="modal">
           <h3>➕ Новый квест</h3>
+          <p v-if="questAddTargetDate" class="modal-sub">📅 День: <strong>{{ questAddTargetDate }}</strong></p>
           <div class="field">
             <label>Название</label>
             <input v-model="questForm.title" type="text" placeholder="Что нужно сделать?">
@@ -1630,7 +1791,7 @@ createApp({
             <p class="field-hint">Пусто = бессрочно. За 1 ч до дедлайна бот напомнит в Telegram.</p>
           </div>
           <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" @click="showAddQuest=false">Отмена</button>
+            <button type="button" class="btn btn-secondary" @click="closeAddQuestModal">Отмена</button>
             <button type="button" class="btn btn-primary" @click="saveNewQuest">Добавить</button>
           </div>
         </div>
@@ -1740,22 +1901,6 @@ createApp({
         </div>
       </div>
 
-      <!-- Growth node complete -->
-      <div v-if="showGrowthNode && activeGrowthNode" class="modal-overlay" @click.self="showGrowthNode=false">
-        <div class="modal">
-          <h3>{{ growthNodeIcon(activeGrowthNode) }} {{ activeGrowthNode.title }}</h3>
-          <p class="modal-sub">+{{ activeGrowthNode.xp_reward }} XP · шаг пути роста</p>
-          <div class="field">
-            <label>Итог / рефлексия (мин. 10 символов)</label>
-            <textarea v-model="growthReflection.summary" rows="4" placeholder="Что сделал по этому шагу пути?"></textarea>
-          </div>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" @click="showGrowthNode=false">Отмена</button>
-            <button type="button" class="btn btn-primary" @click="submitGrowthNode">Завершить шаг</button>
-          </div>
-        </div>
-      </div>
-
       <!-- Chest loot reveal -->
       <div v-if="showChestLoot && chestLoot" class="modal-overlay" @click.self="showChestLoot=false">
         <div class="modal chest-loot-modal">
@@ -1789,67 +1934,135 @@ createApp({
         </div>
       </div>
 
-      <!-- Onboarding -->
-      <div v-if="showOnboarding" class="modal-overlay onboarding-overlay">
-        <div class="modal onboarding-modal">
-          <div v-if="onboardingStep==='welcome'" class="onboarding-step">
-            <h2>🎮 Добро пожаловать!</h2>
-            <p class="modal-sub">Построй свою игру жизни: характеристики, привычки, квесты и прогресс.</p>
-            <div class="field">
-              <label>Имя героя</label>
-              <input v-model="onboardingName" type="text" maxlength="64" placeholder="Как тебя называть?">
+      <!-- Onboarding wizard (Duolingo-style) -->
+      <div v-if="showOnboarding" class="wizard-screen">
+        <div class="wizard-progress"><div class="wizard-progress-fill" :style="{width: wizardProgressPct+'%'}"></div></div>
+        <button v-if="wizardScreen !== 'welcome_name'" type="button" class="wizard-back" @click="wizardBack">← Назад</button>
+
+        <div class="wizard-body">
+          <template v-if="wizardScreen === 'welcome_name'">
+            <div class="wizard-title">Как тебя называть?</div>
+            <div class="wizard-sub">Это имя героя в игре жизни.</div>
+            <input v-model="onboardingName" class="wizard-input" maxlength="64" placeholder="Твоё имя" autofocus>
+          </template>
+          <template v-else-if="wizardScreen === 'welcome_intro'">
+            <div class="wizard-title">🎮 Добро пожаловать!</div>
+            <div class="wizard-sub">Построй свою игру: характеристики, привычки, квесты и прогресс каждый день.</div>
+          </template>
+          <template v-else-if="wizardScreen === 'stats_intro'">
+            <div class="wizard-title">📊 Области роста</div>
+            <div class="wizard-sub">Выбери, в чём хочешь расти. Уровень каждой области растёт от XP за квесты.</div>
+          </template>
+          <template v-else-if="wizardScreen === 'stats_list'">
+            <div class="wizard-title">Твои характеристики</div>
+            <div class="wizard-sub">Минимум одна. Можно добавить свою или из списка.</div>
+            <div class="wizard-stat-list">
+              <div v-for="(s, idx) in onboardingStats" :key="idx" class="wizard-stat-card">
+                <span class="emoji">{{ s.emoji }}</span>
+                <div class="info"><div class="name">{{ s.label }}</div><div class="hint">1000 XP = 1 ур.</div></div>
+                <button type="button" class="edit-btn edit-btn-danger" @click="removeWizardStat(idx)">✕</button>
+              </div>
             </div>
-            <button type="button" class="btn btn-primary" @click="submitOnboardingStep">Далее →</button>
-          </div>
-          <div v-else-if="onboardingStep==='stats'" class="onboarding-step">
-            <h2>📊 Характеристики</h2>
-            <p class="modal-sub">Выбери области жизни. Уровень каждой растёт от XP за квесты по ней.</p>
-            <div class="onboarding-presets">
-              <button v-for="p in statPresets" :key="p.key" type="button" class="btn btn-sm btn-secondary" @click="addOnboardingStat(p)">+ {{ p.emoji }} {{ p.label }}</button>
+            <div class="wizard-presets">
+              <button v-for="p in statPresets" :key="p.key" type="button" class="wizard-preset-btn" @click="startWizardAddStat(p)">+ {{ p.emoji }} {{ p.label }}</button>
             </div>
-            <div v-for="(s, idx) in onboardingStats" :key="idx" class="onboarding-stat-row card">
-              <input v-model="s.emoji" class="stat-emoji-input" maxlength="4">
-              <input v-model="s.label" placeholder="Название" class="stat-label-input">
-              <input v-model.number="s.xp_per_level" type="number" min="100" step="100" class="stat-rule-input" title="XP за уровень">
-              <span class="stat-rule-hint">XP/ур.</span>
-              <button type="button" class="edit-btn edit-btn-danger" @click="removeOnboardingStat(idx)">✕</button>
+            <button type="button" class="btn btn-secondary" style="margin-top:12px" @click="startWizardAddStat()">+ Своя характеристика</button>
+          </template>
+          <template v-else-if="wizardScreen === 'stat_emoji'">
+            <div class="wizard-title">Emoji для характеристики</div>
+            <input v-model="wizardDraftStat.emoji" class="wizard-input" maxlength="4" placeholder="⭐">
+          </template>
+          <template v-else-if="wizardScreen === 'stat_label'">
+            <div class="wizard-title">Как назвать область?</div>
+            <input v-model="wizardDraftStat.label" class="wizard-input" placeholder="Например: Здоровье">
+          </template>
+          <template v-else-if="wizardScreen === 'stat_confirm'">
+            <div class="wizard-title">Добавить характеристику?</div>
+            <div class="wizard-stat-card">
+              <span class="emoji">{{ wizardDraftStat.emoji }}</span>
+              <div class="info"><div class="name">{{ wizardDraftStat.label || '...' }}</div><div class="hint">1000 XP = 1 ур.</div></div>
             </div>
-            <button type="button" class="btn btn-secondary btn-sm" @click="addOnboardingStat()">+ Своя характеристика</button>
-            <button type="button" class="btn btn-primary" style="margin-top:12px" @click="submitOnboardingStep">Далее →</button>
-          </div>
-          <div v-else-if="onboardingStep==='habits'" class="onboarding-step">
-            <h2>⚡ Ежедневные привычки</h2>
-            <p class="modal-sub">Что будешь делать каждый день? Из них создадутся квесты.</p>
-            <div v-for="(h, idx) in onboardingHabits" :key="idx" class="onboarding-habit-row">
-              <input v-model="h.title" placeholder="Например: 100 отжиманий">
-              <select v-model="h.stat_key">
-                <option v-for="s in onboardingStats" :key="s.key" :value="s.key">{{ s.emoji }} {{ s.label }}</option>
-              </select>
-              <input v-model.number="h.xp_reward" type="number" min="1" class="stat-rule-input">
+          </template>
+          <template v-else-if="wizardScreen === 'stats_done'">
+            <div class="wizard-title">Отлично! {{ onboardingStats.length }} характеристик</div>
+            <div class="wizard-sub">Теперь настроим ежедневные привычки.</div>
+          </template>
+          <template v-else-if="wizardScreen === 'habits_intro'">
+            <div class="wizard-title">⚡ Ежедневные привычки</div>
+            <div class="wizard-sub">Что будешь делать каждый день? Из них создадутся квесты. Можно пропустить.</div>
+          </template>
+          <template v-else-if="wizardScreen === 'habits_list'">
+            <div class="wizard-title">Твои привычки</div>
+            <div class="wizard-stat-list">
+              <div v-for="(h, idx) in onboardingHabits" :key="idx" class="wizard-stat-card">
+                <span class="emoji">⚡</span>
+                <div class="info"><div class="name">{{ h.title }}</div><div class="hint">+{{ h.xp_reward }} XP</div></div>
+              </div>
             </div>
-            <button type="button" class="btn btn-secondary btn-sm" @click="addOnboardingHabit">+ Привычка</button>
-            <button type="button" class="btn btn-primary" style="margin-top:12px" @click="submitOnboardingStep">Начать игру! 🚀</button>
-          </div>
+            <button type="button" class="btn btn-secondary" style="margin-top:12px" @click="startWizardAddHabit">+ Добавить привычку</button>
+          </template>
+          <template v-else-if="wizardScreen === 'habit_title'">
+            <div class="wizard-title">Что будешь делать?</div>
+            <input v-model="wizardDraftHabit.title" class="wizard-input" placeholder="100 отжиманий">
+          </template>
+          <template v-else-if="wizardScreen === 'habit_stat'">
+            <div class="wizard-title">К какой характеристике?</div>
+            <select v-model="wizardDraftHabit.stat_key" class="wizard-input">
+              <option v-for="s in onboardingStats" :key="s.key" :value="s.key">{{ s.emoji }} {{ s.label }}</option>
+            </select>
+          </template>
+          <template v-else-if="wizardScreen === 'habit_xp'">
+            <div class="wizard-title">Сколько XP за выполнение?</div>
+            <input v-model.number="wizardDraftHabit.xp_reward" type="number" min="1" class="wizard-input">
+          </template>
+          <template v-else-if="wizardScreen === 'habit_confirm'">
+            <div class="wizard-title">Добавить привычку?</div>
+            <div class="wizard-stat-card">
+              <span class="emoji">⚡</span>
+              <div class="info"><div class="name">{{ wizardDraftHabit.title }}</div><div class="hint">+{{ wizardDraftHabit.xp_reward }} XP</div></div>
+            </div>
+          </template>
+        </div>
+
+        <div class="wizard-footer">
+          <button type="button" class="btn btn-primary" @click="wizardPrimaryAction">
+            {{ wizardScreen === 'habits_list' ? 'Начать игру 🚀' : 'Далее →' }}
+          </button>
+          <button v-if="wizardScreen === 'habits_intro' || wizardScreen === 'habits_list'" type="button" class="btn btn-secondary" @click="skipWizardHabits">Пропустить</button>
         </div>
       </div>
 
-      <!-- Stat config edit -->
-      <div v-if="showStatEdit" class="modal-overlay" @click.self="showStatEdit=false">
-        <div class="modal">
-          <h3>✏️ Характеристики</h3>
-          <p class="modal-sub">Уровень = XP по этой характеристике ÷ «XP за уровень».</p>
-          <div v-for="(s, idx) in statEditForm" :key="idx" class="onboarding-stat-row card">
-            <input v-model="s.emoji" class="stat-emoji-input" maxlength="4">
-            <input v-model="s.label" class="stat-label-input" placeholder="Название">
-            <input v-model.number="s.xp_per_level" type="number" min="100" step="100" class="stat-rule-input" placeholder="1000">
-            <span class="stat-rule-hint">XP/ур.</span>
-            <button type="button" class="edit-btn edit-btn-danger" @click="removeStatRow(idx)">✕</button>
-          </div>
-          <button type="button" class="btn btn-secondary btn-sm" @click="addStatRow">+ Добавить</button>
+      <!-- Stat edit sheet -->
+      <div v-if="showStatSheet" class="sheet-overlay" @click.self="showStatSheet=false">
+        <div class="sheet-panel">
+          <div class="sheet-title">{{ statSheetOriginalKey ? '✏️ Характеристика' : '➕ Новая характеристика' }}</div>
+          <div class="field"><label>Emoji</label><input v-model="statSheetForm.emoji" maxlength="4"></div>
+          <div class="field"><label>Название</label><input v-model="statSheetForm.label"></div>
+          <div class="field"><label>XP за уровень</label><input v-model.number="statSheetForm.xp_per_level" type="number" min="100" step="100"></div>
           <div class="modal-actions">
-            <button type="button" class="btn btn-secondary" @click="showStatEdit=false">Отмена</button>
-            <button type="button" class="btn btn-primary" @click="saveStatEdit">Сохранить</button>
+            <button type="button" class="btn btn-secondary" @click="showStatSheet=false">Отмена</button>
+            <button type="button" class="btn btn-primary" @click="statSheetOriginalKey ? saveStatSheet() : saveNewStatSheet()">Сохранить</button>
           </div>
+          <button v-if="statSheetOriginalKey" type="button" class="btn-danger-text" @click="deleteStatSheet">Удалить характеристику</button>
+        </div>
+      </div>
+
+      <!-- Habit edit sheet -->
+      <div v-if="showHabitSheet" class="sheet-overlay" @click.self="showHabitSheet=false">
+        <div class="sheet-panel">
+          <div class="sheet-title">{{ editingHabitId ? '✏️ Привычка' : '➕ Новая привычка' }}</div>
+          <div class="field"><label>Название</label><input v-model="habitForm.title" placeholder="100 отжиманий"></div>
+          <div class="field"><label>Характеристика</label>
+            <select v-model="habitForm.stat_key">
+              <option v-for="k in statKeys" :key="k" :value="k">{{ statLabel(k) }}</option>
+            </select>
+          </div>
+          <div class="field"><label>XP за выполнение</label><input v-model.number="habitForm.xp_reward" type="number" min="1"></div>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" @click="showHabitSheet=false">Отмена</button>
+            <button type="button" class="btn btn-primary" @click="saveHabitSheet">Сохранить</button>
+          </div>
+          <button v-if="editingHabitId" type="button" class="btn-danger-text" @click="deleteHabitAction">Удалить привычку</button>
         </div>
       </div>
     </div>
