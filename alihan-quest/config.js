@@ -1,7 +1,7 @@
 ﻿// API backend URL. Auto-updated by start-alihan-quest launcher.
 window.QUEST_CONFIG = {
-  API_BASE: 'https://appearance-mutual-hill-constitutes.trycloudflare.com',
+  API_BASE: 'https://basement-trailer-system-jack.trycloudflare.com',
   DEMO_TOKEN: 'demo-alihan-quest',
-  CACHE_VERSION: 36,
+  CACHE_VERSION: 37,
 };
 
