@@ -1046,7 +1046,7 @@ createApp({
       if (p?.online && p.data) profile.value = ensureProfile(p.data);
       else profile.value = ensureProfile(QuestAPI.cachedProfile());
       if (q?.online && q.data) questPack.value = q.data;
-      else questPack.value = { date: new Date().toISOString().slice(0, 10), main_mission: '', quests: [] };
+      else questPack.value = QuestAPI.cachedQuests();
       if (profile.value?.onboarding && !profile.value.onboarding.completed) {
         await initOnboarding();
       }
@@ -1582,7 +1582,9 @@ createApp({
         🔐 Не удалось войти через Telegram. Закрой Mini App полностью и открой снова через @game_alikhan_bot.
       </div>
       <div v-else-if="!apiOnline" class="offline-banner">
-        📡 Нет связи с сервером ({{ QuestAPI.getApiBase() || 'API не задан' }}). Запусти start-alihan-quest.bat и не закрывай окно Tunnel.
+        📡 Нет связи с сервером ({{ QuestAPI.getApiBase() || 'API не задан' }}).
+        <button type="button" class="offline-retry" @click="refresh">↻ Повторить</button>
+        <span class="offline-hint">Запусти start-alihan-quest.bat и не закрывай Tunnel.</span>
       </div>
       <div v-else-if="syncInfo" class="sync-banner">
         🗄 БД · player #{{ syncInfo.player_id }} · {{ syncInfo.quest_count }} задач ({{ syncInfo.manual_count || 0 }} вручную) · бот видит то же

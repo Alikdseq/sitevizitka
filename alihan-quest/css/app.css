@@ -82,6 +82,24 @@ body {
   position: relative;
   z-index: 2;
 }
+.offline-retry {
+  display: inline-block;
+  margin-top: 8px;
+  padding: 6px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.5);
+  border-radius: 8px;
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--gold);
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.offline-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 0.7rem;
+  opacity: 0.85;
+}
 
 .sync-banner {
   flex-shrink: 0;

@@ -161,7 +161,12 @@ function loadLocal() {
   try {
     const raw = JSON.parse(localStorage.getItem(storageKey()) || '{}');
     const ver = window.QUEST_CONFIG?.CACHE_VERSION || 1;
-    if (raw._cacheVersion !== ver) return { _cacheVersion: ver };
+    if (raw._cacheVersion !== ver) {
+      raw._cacheVersion = ver;
+      try {
+        localStorage.setItem(storageKey(), JSON.stringify(raw));
+      } catch { /* ignore */ }
+    }
     return raw;
   } catch { return {}; }
 }
@@ -333,7 +338,13 @@ window.QuestAPI = {
       saveLocal(local);
       return { data, online: true, sync: raw.sync || null };
     } catch (err) {
-      return { data: { date: new Date().toISOString().slice(0, 10), main_mission: '', quests: [], sync: null }, online: false, authError: err?.status === 403, error: String(err) };
+      return {
+        data: cachedQuests(),
+        online: false,
+        authError: err?.status === 403,
+        error: String(err),
+        sync: null,
+      };
     }
   },
 
