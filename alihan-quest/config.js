@@ -1,7 +1,7 @@
 ﻿// API backend URL. Auto-updated by start-alihan-quest launcher.
 window.QUEST_CONFIG = {
-  API_BASE: 'https://arrange-converted-motorola-head.trycloudflare.com',
+  API_BASE: 'https://mean-vat-classics-dispatch.trycloudflare.com',
   DEMO_TOKEN: 'demo-alihan-quest',
-  CACHE_VERSION: 41,
+  CACHE_VERSION: 42,
 };
 
