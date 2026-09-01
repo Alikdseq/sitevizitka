@@ -530,6 +530,41 @@ window.QuestAPI = {
     return await apiFetch('/habits/game/today/');
   },
 
+  async getReferral() {
+    return await apiFetch('/referral/');
+  },
+
+  async applyReferral(code) {
+    return await apiFetch('/referral/', { method: 'POST', body: JSON.stringify({ code }) });
+  },
+
+  async getShopCourses() {
+    return await apiFetch('/shop/courses/');
+  },
+
+  async purchaseCourse(courseId, useReferralCredit = false) {
+    return await apiFetch(`/shop/courses/${courseId}/purchase/`, {
+      method: 'POST',
+      body: JSON.stringify({ use_referral_credit: useReferralCredit }),
+    });
+  },
+
+  async getAdminDashboard() {
+    return await apiFetch('/admin/dashboard/');
+  },
+
+  async getAdminPlayers() {
+    return await apiFetch('/admin/players/');
+  },
+
+  async updateAdminPlayer(id, payload) {
+    return await apiFetch(`/admin/players/${id}/`, { method: 'PATCH', body: JSON.stringify(payload) });
+  },
+
+  async deleteAdminPlayer(id) {
+    return await apiFetch(`/admin/players/${id}/`, { method: 'DELETE' });
+  },
+
   async createGoal(payload) {
     const goal = await apiFetch('/goals/', { method: 'POST', body: JSON.stringify(payload) });
     return goal;

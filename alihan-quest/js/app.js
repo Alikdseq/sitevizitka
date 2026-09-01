@@ -146,6 +146,13 @@ createApp({
     const clanForm = ref({ name: '', invite_code: '', stat_focus: 'discipline' });
     const shopThemes = ref([]);
     const subscription = ref(null);
+    const shopCourses = ref([]);
+    const referralInfo = ref(null);
+    const adminDashboard = ref(null);
+    const adminPlayers = ref([]);
+    const showAdmin = ref(false);
+    const adminEditForm = ref({ display_name: '', free_course_credits: 0, is_active: true });
+    const editingAdminPlayerId = ref(null);
 
     const activeQuest = ref(null);
     const detailQuest = ref(null);
@@ -171,7 +178,7 @@ createApp({
     });
 
     const questsByStat = computed(() => {
-      const quests = questPack.value?.quests;
+      const quests = regularQuests.value;
       if (!Array.isArray(quests)) return {};
       const groups = {};
       quests.forEach((q) => {
@@ -181,6 +188,20 @@ createApp({
       });
       return groups;
     });
+
+    const habitQuests = computed(() =>
+      (questPack.value?.quests || []).filter((q) => q.source === 'habit')
+    );
+
+    const gameHabitQuests = computed(() =>
+      (questPack.value?.quests || []).filter((q) => q.source === 'game_habit')
+    );
+
+    const regularQuests = computed(() =>
+      (questPack.value?.quests || []).filter((q) => !['habit', 'game_habit'].includes(q.source))
+    );
+
+    const isAdmin = computed(() => Boolean(displayProfile.value?.is_admin));
 
     const pendingCount = computed(() =>
       questPack.value?.quests?.filter((q) => q.status === 'pending').length || 0
@@ -379,15 +400,113 @@ createApp({
 
     async function loadShop() {
       try {
-        const [themes, sub] = await Promise.all([
+        const [themes, sub, courses, ref] = await Promise.all([
           QuestAPI.getShopThemes(),
           QuestAPI.getSubscription(),
+          QuestAPI.getShopCourses(),
+          QuestAPI.getReferral(),
         ]);
         shopThemes.value = themes?.themes || [];
         subscription.value = sub;
+        shopCourses.value = courses?.courses || [];
+        referralInfo.value = ref || displayProfile.value?.referral || null;
       } catch {
         shopThemes.value = [];
+        shopCourses.value = [];
       }
+    }
+
+    async function purchaseCourseAction(course, useCredit = false) {
+      try {
+        const r = await QuestAPI.purchaseCourse(course.id, useCredit);
+        if (r?.error === 'payment_required') {
+          showToast(r.message || 'Оплата скоро — используй бесплатный кредит');
+          return;
+        }
+        if (r?.error) {
+          showToast(r.error === 'already_owned' ? 'Курс уже куплен' : 'Не удалось купить');
+          return;
+        }
+        showToast('Курс получен ✓');
+        await loadShop();
+        await refresh();
+      } catch {
+        showToast('Нет связи с сервером');
+      }
+    }
+
+    function shareReferralLink() {
+      const ref = referralInfo.value || displayProfile.value?.referral;
+      if (!ref?.referral_link) return;
+      const text = `${ref.share_text || 'Присоединяйся к ALIHAN QUEST!'}\n${ref.referral_link}`;
+      const tg = window.Telegram?.WebApp;
+      if (tg?.openTelegramLink) {
+        tg.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(ref.referral_link)}&text=${encodeURIComponent(ref.share_text || 'ALIHAN QUEST')}`);
+        return;
+      }
+      if (navigator.share) {
+        navigator.share({ title: ref.share_title, text: ref.share_text, url: ref.referral_link }).catch(() => {});
+        return;
+      }
+      navigator.clipboard?.writeText(text);
+      showToast('Ссылка скопирована');
+    }
+
+    async function loadAdmin() {
+      if (!isAdmin.value) return;
+      try {
+        const [dash, players] = await Promise.all([
+          QuestAPI.getAdminDashboard(),
+          QuestAPI.getAdminPlayers(),
+        ]);
+        adminDashboard.value = dash;
+        adminPlayers.value = players?.players || [];
+      } catch {
+        adminDashboard.value = null;
+        adminPlayers.value = [];
+      }
+    }
+
+    function openAdminPlayer(p) {
+      editingAdminPlayerId.value = p.id;
+      adminEditForm.value = {
+        display_name: p.display_name,
+        free_course_credits: p.free_course_credits || 0,
+        is_active: p.is_active !== false,
+      };
+    }
+
+    async function saveAdminPlayer() {
+      if (!editingAdminPlayerId.value) return;
+      try {
+        await QuestAPI.updateAdminPlayer(editingAdminPlayerId.value, adminEditForm.value);
+        showToast('Игрок обновлён ✓');
+        editingAdminPlayerId.value = null;
+        await loadAdmin();
+      } catch {
+        showToast('Ошибка сохранения');
+      }
+    }
+
+    async function deleteAdminPlayerAction(p) {
+      if (!window.confirm(`Деактивировать игрока «${p.display_name}»?`)) return;
+      try {
+        await QuestAPI.deleteAdminPlayer(p.id);
+        showToast('Игрок деактивирован');
+        await loadAdmin();
+      } catch {
+        showToast('Ошибка');
+      }
+    }
+
+    async function tryApplyReferralFromTelegram() {
+      const tg = window.Telegram?.WebApp;
+      const startParam = tg?.initDataUnsafe?.start_param || '';
+      if (!startParam) return;
+      const code = startParam.startsWith('ref_') ? startParam.slice(4) : startParam;
+      try {
+        await QuestAPI.applyReferral(code);
+      } catch { /* already referred or invalid */ }
     }
 
     async function createClanAction() {
@@ -1211,6 +1330,7 @@ createApp({
       if (name === 'habits') await loadHabits();
       if (name === 'clan') await loadClan();
       if (name === 'shop') await loadShop();
+      if (name === 'admin') await loadAdmin();
       if (name === 'journal') {
         await Promise.all([loadCalendar(), loadJournalInsights()]);
       }
@@ -1232,6 +1352,7 @@ createApp({
         if (document.visibilityState === 'visible') refresh();
       });
       try {
+        await tryApplyReferralFromTelegram();
         await refresh();
       } catch {
         profile.value = QuestAPI.cachedProfile();
@@ -1251,7 +1372,9 @@ createApp({
       showStatSheet, statSheetForm, statSheetOriginalKey,
       analyticsData,
       leagueData,
-      clanData, clanForm, shopThemes, subscription,
+      clanData, clanForm, shopThemes, subscription, shopCourses, referralInfo, isAdmin,
+      adminDashboard, adminPlayers, adminEditForm, editingAdminPlayerId,
+      habitQuests, gameHabitQuests, regularQuests,
       chestSummary, victoryProgressPct, readyChests,
       activeQuest, detailQuest, importJson, reflection, progressNotes,
       questForm, goalForm, editingGoalId,
@@ -1269,7 +1392,9 @@ createApp({
       openStatCard, saveStatSheet, deleteStatSheet, openStatAdd, saveNewStatSheet,
       openHabitAdd, openHabitEdit, saveHabitSheet, deleteHabitAction,
       openGoalAdd, openGoalEditGoal, saveGoalForm, deleteGoalAction, goalProgressLabel, statProgress,
-      loadClan, loadShop, createClanAction, joinClanAction, leaveClanAction,
+      loadClan, loadShop, loadAdmin, purchaseCourseAction, shareReferralLink,
+      createClanAction, joinClanAction, leaveClanAction,
+      openAdminPlayer, saveAdminPlayer, deleteAdminPlayerAction,
       activateThemeAction, checkoutProAction, useGraceAction,
       openAddQuest, openAddQuestForJournal, closeAddQuestModal, questAddTargetDate,
       openEditQuest, saveNewQuest, saveEditedQuest, removeQuest, deferQuestToTomorrow,
@@ -1412,7 +1537,7 @@ createApp({
             <button type="button" class="btn btn-secondary btn-sm" @click="refresh">↻ Обновить</button>
           </div>
 
-          <div v-if="!questPack.quests.length" class="empty-state">
+          <div v-if="!questPack.quests.length && !habitQuests.length && !gameHabitQuests.length" class="empty-state">
             <p>⚔️ Задания на сегодня не созданы</p>
             <button type="button" class="btn btn-primary" @click="openImport(false)">Импортировать Quest Pack →</button>
           </div>
@@ -1421,8 +1546,39 @@ createApp({
             <div v-if="questPack.main_mission" class="quest-mission">
               🔥 <strong>Главная миссия:</strong> {{ questPack.main_mission }}
             </div>
-            <p class="quest-meta">{{ pendingCount }} активных · {{ questPack.date }} · смахни вправо → завтра</p>
+            <p class="quest-meta">{{ pendingCount }} активных · {{ questPack.date }}</p>
 
+            <div v-if="habitQuests.length" class="habit-block">
+              <div class="section-head progress-subhead">⚡ Мои привычки</div>
+              <div v-for="q in habitQuests" :key="'h-'+q.id"
+                   class="quest-item"
+                   :class="{done: q.status==='done', failed: q.status==='failed'}"
+                   @click="openQuest(q)">
+                <div class="quest-check">{{ q.status==='done' ? '✓' : '' }}</div>
+                <div class="quest-body">
+                  <div class="quest-title">{{ q.title }}</div>
+                  <div class="quest-xp">+{{ q.xp_reward }} XP · {{ statLabel(q.stat_key) }} · привычка</div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="gameHabitQuests.length" class="habit-block">
+              <div class="section-head progress-subhead">🎲 Привычки от игры</div>
+              <div v-for="q in gameHabitQuests" :key="'g-'+q.id"
+                   class="quest-item"
+                   :class="{done: q.status==='done', failed: q.status==='failed'}"
+                   @click="openQuest(q)">
+                <div class="quest-check">{{ q.status==='done' ? '✓' : '' }}</div>
+                <div class="quest-body">
+                  <div class="quest-title">{{ q.title }}</div>
+                  <div class="quest-xp">+{{ q.xp_reward }} XP · {{ statLabel(q.stat_key) }} · <span class="habit-badge">ИГРА</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="regularQuests.length">
+              <div class="section-head progress-subhead">📋 Задачи</div>
+            </div>
             <template v-for="(quests, statKey) in questsByStat" :key="statKey">
               <div class="quest-group-title">{{ statLabel(statKey) }}</div>
               <div v-for="q in quests" :key="q.id"
@@ -1446,7 +1602,7 @@ createApp({
               </div>
             </template>
 
-            <button type="button" class="btn btn-secondary quest-refresh" @click="openReplaceImport">↻ Заменить Quest Pack</button>
+            <button v-if="regularQuests.length" type="button" class="btn btn-secondary quest-refresh" @click="openReplaceImport">↻ Заменить Quest Pack</button>
           </template>
         </section>
 
@@ -1559,7 +1715,47 @@ createApp({
 
         <!-- SHOP / PRO -->
         <section v-else-if="tab==='shop'" class="screen">
-          <div class="section-head">🛒 Квест Про и темы</div>
+          <div class="section-head-row">
+            <div class="section-head">🛒 Магазин</div>
+            <button v-if="isAdmin" type="button" class="edit-btn" @click="switchTab('admin')">⚙️ Админ</button>
+          </div>
+
+          <div class="invite-card card">
+            <div class="invite-card-visual">⚔️</div>
+            <h3 class="invite-card-title">{{ (referralInfo || displayProfile.referral)?.share_title || 'ALIHAN QUEST' }}</h3>
+            <p class="invite-card-desc">Пригласи друга в Telegram — когда он пройдёт онбординг, ты получишь <strong>1 бесплатный курс</strong> в магазине.</p>
+            <p v-if="referralInfo || displayProfile.referral" class="invite-stats">
+              Приглашено: {{ (referralInfo || displayProfile.referral).invited_count }}
+              · Бонусов: {{ (referralInfo || displayProfile.referral).free_course_credits }}
+            </p>
+            <button type="button" class="btn btn-primary" @click="shareReferralLink">📨 Пригласить друга</button>
+          </div>
+
+          <div class="section-head progress-subhead">📚 Курсы</div>
+          <div v-for="c in shopCourses" :key="c.id" class="card course-card">
+            <div class="course-head">
+              <span class="course-emoji">{{ c.emoji }}</span>
+              <div>
+                <div class="course-title">{{ c.title }}</div>
+                <div class="course-price">{{ c.owned ? '✓ Куплено' : c.price_rub + ' ₽' }}</div>
+              </div>
+            </div>
+            <p class="modal-sub">{{ c.description }}</p>
+            <div v-if="c.owned && c.file_url" class="course-link">
+              <a :href="c.file_url" target="_blank" rel="noopener">Скачать материал →</a>
+            </div>
+            <div v-else-if="!c.owned" class="course-actions">
+              <button
+                v-if="(referralInfo || displayProfile.referral)?.free_course_credits > 0"
+                type="button"
+                class="btn btn-primary btn-sm"
+                @click="purchaseCourseAction(c, true)"
+              >🎁 Бесплатно (бонус)</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="purchaseCourseAction(c, false)">Купить</button>
+            </div>
+          </div>
+
+          <div class="section-head progress-subhead" style="margin-top:20px">✨ Квест Про</div>
           <div class="card pro-card">
             <div class="pro-title">Квест Про</div>
             <p class="modal-sub">Темы, +1 защита серии/мес, ранний доступ</p>
@@ -1586,6 +1782,32 @@ createApp({
               <span class="theme-name">{{ t.title }}</span>
               <span v-if="t.requires_pro" class="theme-badge">ПРО</span>
             </button>
+          </div>
+        </section>
+
+        <!-- ADMIN -->
+        <section v-else-if="tab==='admin' && isAdmin" class="screen">
+          <div class="section-head-row">
+            <div class="section-head">⚙️ Админка</div>
+            <button type="button" class="edit-btn" @click="switchTab('shop')">← Назад</button>
+          </div>
+          <div v-if="adminDashboard" class="admin-stats card">
+            <div class="admin-stat"><span class="n">{{ adminDashboard.total_players }}</span><span class="l">игроков</span></div>
+            <div class="admin-stat"><span class="n">{{ adminDashboard.active_today }}</span><span class="l">сегодня онлайн</span></div>
+            <div class="admin-stat"><span class="n">{{ adminDashboard.onboarded }}</span><span class="l">онбординг ✓</span></div>
+            <div class="admin-stat"><span class="n">{{ adminDashboard.new_today }}</span><span class="l">новых сегодня</span></div>
+          </div>
+          <button type="button" class="btn btn-secondary btn-sm" style="margin-bottom:12px" @click="loadAdmin">↻ Обновить</button>
+          <div v-for="p in adminPlayers" :key="p.id" class="card admin-player-row">
+            <div class="admin-player-head">
+              <strong>{{ p.display_name }}</strong>
+              <span v-if="!p.is_active" class="habit-badge">OFF</span>
+            </div>
+            <p class="modal-sub">#{{ p.id }} · TG {{ p.telegram_id || '—' }} · {{ p.total_xp }} XP · {{ p.last_seen_at ? p.last_seen_at.slice(0,10) : 'нет входа' }}</p>
+            <div class="admin-player-actions">
+              <button type="button" class="edit-btn edit-btn-sm" @click="openAdminPlayer(p)">✏️</button>
+              <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="deleteAdminPlayerAction(p)">🗑</button>
+            </div>
           </div>
         </section>
 
@@ -2063,6 +2285,22 @@ createApp({
             <button type="button" class="btn btn-primary" @click="saveHabitSheet">Сохранить</button>
           </div>
           <button v-if="editingHabitId" type="button" class="btn-danger-text" @click="deleteHabitAction">Удалить привычку</button>
+        </div>
+      </div>
+
+      <!-- Admin player edit -->
+      <div v-if="editingAdminPlayerId" class="sheet-overlay" @click.self="editingAdminPlayerId=null">
+        <div class="sheet-panel">
+          <div class="sheet-title">✏️ Игрок #{{ editingAdminPlayerId }}</div>
+          <div class="field"><label>Имя</label><input v-model="adminEditForm.display_name"></div>
+          <div class="field"><label>Бонусов на курсы</label><input v-model.number="adminEditForm.free_course_credits" type="number" min="0"></div>
+          <label class="checkbox-row">
+            <input v-model="adminEditForm.is_active" type="checkbox"> Активен
+          </label>
+          <div class="modal-actions">
+            <button type="button" class="btn btn-secondary" @click="editingAdminPlayerId=null">Отмена</button>
+            <button type="button" class="btn btn-primary" @click="saveAdminPlayer">Сохранить</button>
+          </div>
         </div>
       </div>
     </div>
