@@ -1,22 +1,13 @@
 # Assets v7
 
-Иконки из дизайн-пака: `icons/*.png` (прозрачный фон).
+Положите сюда файлы от дизайнера:
 
-Регенерация из sprite-sheet:
+| Файл | Использование |
+|------|----------------|
+| `chest-gold.png` | Золотой сундук (home + reward modal) |
+| `chest-silver.png` | Серебряный сундук |
+| `chest-wood.png` | Деревянный сундук |
+| `hero-island.png` | Главная арена (опционально заменит CSS) |
+| `icons/*.svg` | Nav и stat icons |
 
-```bash
-python projects/alihan-quest/04-development/scripts/extract-ui-assets.py
-```
-
-| Папка / файл | Использование |
-|--------------|----------------|
-| `icons/nav-*.png` | Нижняя навигация |
-| `icons/side-*.png` | Боковые кнопки главной |
-| `icons/chest-*.png` | Слоты сундуков и модал награды |
-| `icons/coin-*.png` | HUD: золото, гемы |
-| `icons/arena-island.png` | Фон арены |
-| `icons/hero-male.png` | Персонаж на главной |
-| `icons/ico-*.png` | Меню профиля и утилиты |
-| `icons/manifest.json` | Карта имён → путей |
-
-Код: `js/icons.js`, стили: `css/v7-mockup.css` (`.game-icon`).
+После добавления — обновить пути в `js/app.js` и `css/v7-mockup.css`.
