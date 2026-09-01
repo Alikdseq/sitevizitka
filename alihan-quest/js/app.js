@@ -258,7 +258,7 @@ createApp({
       const goldReady = ready[0];
       slots.push({
         type: 'gold',
-        icon: '🏆',
+        icon: 'chest-gold',
         title: 'Золотой сундук',
         label: goldReady ? 'ОТКРЫТЬ' : `${victoryDone}/${victoryReq}`,
         ready: Boolean(goldReady),
@@ -266,21 +266,21 @@ createApp({
       });
       slots.push({
         type: 'silver',
-        icon: '📦',
+        icon: 'chest-silver',
         title: 'Серебряный сундук',
         label: '3ч 24м',
         timer: true,
       });
       slots.push({
         type: 'wood',
-        icon: '📦',
+        icon: 'chest-wood',
         title: 'Деревянный сундук',
         label: '1ч 15м',
         timer: true,
       });
       slots.push({
         type: 'locked',
-        icon: '🔒',
+        icon: 'locked',
         title: 'Слот сундука',
         label: '',
         locked: true,
@@ -325,6 +325,19 @@ createApp({
 
     function statIcon(key) {
       return STAT_ICONS[key] || '⭐';
+    }
+
+    function iconUrl(name) {
+      return window.QuestIcons?.get(name) || '';
+    }
+
+    function statIconUrl(key) {
+      return window.QuestIcons?.statKey(key) || '';
+    }
+
+    function chestIconUrl(type) {
+      if (type === 'locked') return '';
+      return window.QuestIcons?.chestType(type) || '';
     }
 
     function onChestSlotClick(slot) {
@@ -1035,21 +1048,48 @@ createApp({
       }
     }
 
+    let refreshInFlight = null;
+    let refreshQueued = false;
+    let viewportRefreshTimer = null;
+
     async function refresh() {
-      const [p, q] = await Promise.all([
-        QuestAPI.getProfile(),
-        QuestAPI.getTodayQuests(),
-      ]);
-      authError.value = Boolean(p?.authError || q?.authError);
-      apiOnline.value = Boolean(p?.online && q?.online);
-      syncInfo.value = q?.sync || p?.data?.sync || q?.data?.sync || null;
-      if (p?.online && p.data) profile.value = ensureProfile(p.data);
-      else profile.value = ensureProfile(QuestAPI.cachedProfile());
-      if (q?.online && q.data) questPack.value = q.data;
-      else questPack.value = QuestAPI.cachedQuests();
-      if (profile.value?.onboarding && !profile.value.onboarding.completed) {
-        await initOnboarding();
+      if (refreshInFlight) {
+        refreshQueued = true;
+        return refreshInFlight;
       }
+      refreshInFlight = (async () => {
+        const [p, q] = await Promise.all([
+          QuestAPI.getProfile(),
+          QuestAPI.getTodayQuests(),
+        ]);
+        authError.value = Boolean(p?.authError || q?.authError);
+        apiOnline.value = Boolean(p?.online && q?.online);
+        syncInfo.value = q?.sync || p?.data?.sync || q?.data?.sync || null;
+        if (p?.online && p.data) profile.value = ensureProfile(p.data);
+        else profile.value = ensureProfile(QuestAPI.cachedProfile());
+        if (q?.online && q.data) questPack.value = q.data;
+        else questPack.value = QuestAPI.cachedQuests();
+        if (profile.value?.onboarding && !profile.value.onboarding.completed) {
+          await initOnboarding();
+        }
+      })();
+      try {
+        await refreshInFlight;
+      } finally {
+        refreshInFlight = null;
+        if (refreshQueued) {
+          refreshQueued = false;
+          await refresh();
+        }
+      }
+    }
+
+    function refreshDebounced(delayMs = 800) {
+      if (viewportRefreshTimer) clearTimeout(viewportRefreshTimer);
+      viewportRefreshTimer = setTimeout(() => {
+        viewportRefreshTimer = null;
+        refresh();
+      }, delayMs);
     }
 
     function fmtDueTime(value) {
@@ -1492,10 +1532,10 @@ createApp({
       setupTelegramViewport();
       const tg = window.Telegram?.WebApp;
       if (tg && typeof tg.onEvent === 'function') {
-        tg.onEvent('viewportChanged', () => refresh());
+        tg.onEvent('viewportChanged', () => refreshDebounced(900));
       }
       document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') refresh();
+        if (document.visibilityState === 'visible') refreshDebounced(300);
       });
       try {
         await tryApplyReferralFromTelegram();
@@ -1520,11 +1560,11 @@ createApp({
       leagueData,
       clanData, clanForm, shopThemes, subscription, shopCourses, referralInfo, isAdmin,
       adminDashboard, adminPlayers, adminEditForm, editingAdminPlayerId,
-      habitQuests, gameHabitQuests, regularQuests,
+      habitQuests, gameHabitQuests, regularQuests, allQuestsToday,
       questViewTab, goalsViewTab, showGameHud, hudInitial, questCoins, questGems,
-      questsDoneToday, questsTotalToday, questDailyPct, chestSlotsUi,
+      questsDoneToday, questsTotalToday, questDailyPct, chestSlotsUi, victoryRequired,
       profileMenuDays, profileQuestsDone, navQuestBadge, statBarGradient,
-      statIconClass, statLabelPlain, statIcon,
+      statIconClass, statLabelPlain, statIcon, iconUrl, statIconUrl, chestIconUrl,
       onChestSlotClick, shareFriends, closeMiniApp,
       chestSummary, victoryProgressPct, readyChests,
       activeQuest, detailQuest, importJson, reflection, progressNotes,
@@ -1606,9 +1646,9 @@ createApp({
           </div>
         </div>
         <div class="hud-currencies">
-          <div class="hud-pill gold"><span class="ico">🪙</span>{{ fmtNum(questCoins) }}</div>
+          <div class="hud-pill gold"><img class="game-icon hud-ico" :src="iconUrl('coin-gold')" alt=""><span>{{ fmtNum(questCoins) }}</span></div>
           <div class="hud-pill gem">
-            <span class="ico">💎</span>{{ fmtNum(questGems) }}
+            <img class="game-icon hud-ico" :src="iconUrl('coin-gem')" alt=""><span>{{ fmtNum(questGems) }}</span>
             <button type="button" class="hud-plus" @click="switchTab('shop')">+</button>
           </div>
         </div>
@@ -1625,17 +1665,17 @@ createApp({
             <div class="home-side-col home-side-left">
               <div class="side-btn-wrap">
                 <button type="button" class="side-btn side-chests" @click="onChestSlotClick(chestSlotsUi[0])">
-                  📦
+                  <img class="game-icon side-ico" :src="iconUrl('side-chests')" alt="">
                   <span v-if="readyChests.length" class="side-badge">{{ readyChests.length }}</span>
                 </button>
                 <span class="side-btn-label">Сундуки</span>
               </div>
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn side-goals" @click="switchTab('goals')">🎯</button>
+                <button type="button" class="side-btn side-goals" @click="switchTab('goals')"><img class="game-icon side-ico" :src="iconUrl('side-goals')" alt=""></button>
                 <span class="side-btn-label">Цели</span>
               </div>
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn side-league" @click="switchTab('league')">🥇</button>
+                <button type="button" class="side-btn side-league" @click="switchTab('league')"><img class="game-icon side-ico" :src="iconUrl('league-gold')" alt=""></button>
                 <span class="side-btn-label">Лига</span>
               </div>
             </div>
@@ -1649,29 +1689,27 @@ createApp({
                 <div class="level-hex-xp">{{ fmtNum(displayProfile.xp_in_level) }} / {{ fmtNum(displayProfile.xp_needed) }} XP</div>
               </div>
               <div class="arena-scene">
-                <div class="arena-portal"></div>
-                <div class="arena-ruins"></div>
-                <div class="arena-island"></div>
-                <div class="arena-hero"></div>
+                <img class="arena-bg-img" :src="iconUrl('arena-island')" alt="">
+                <img class="arena-hero-img" :src="iconUrl('hero-male')" alt="">
                 <button type="button" class="btn-cta-quest arena-cta" @click="switchTab('quests')">В КВЕСТ</button>
               </div>
             </div>
 
             <div class="home-side-col home-side-right">
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn" @click="switchTab('shop')">🛒</button>
+                <button type="button" class="side-btn" @click="switchTab('shop')"><img class="game-icon side-ico" :src="iconUrl('side-shop')" alt=""></button>
                 <span class="side-btn-label">Магазин</span>
               </div>
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn" @click="switchTab('quests')">🏅</button>
+                <button type="button" class="side-btn" @click="switchTab('quests')"><img class="game-icon side-ico" :src="iconUrl('side-events')" alt=""></button>
                 <span class="side-btn-label">События</span>
               </div>
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn" @click="switchTab('clan')">🛡️</button>
+                <button type="button" class="side-btn" @click="switchTab('clan')"><img class="game-icon side-ico" :src="iconUrl('nav-clan')" alt=""></button>
                 <span class="side-btn-label">Клан</span>
               </div>
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn" @click="shareFriends">👥</button>
+                <button type="button" class="side-btn" @click="shareFriends"><img class="game-icon side-ico" :src="iconUrl('side-friends')" alt=""></button>
                 <span class="side-btn-label">Друзья</span>
               </div>
               <div v-if="isAdmin" class="side-btn-wrap">
@@ -1690,7 +1728,10 @@ createApp({
               :disabled="slot.locked"
               @click="onChestSlotClick(slot)"
             >
-              <span class="chest-slot-icon">{{ slot.icon }}</span>
+              <span class="chest-slot-icon">
+                <img v-if="chestIconUrl(slot.type)" class="game-icon chest-ico" :src="chestIconUrl(slot.type)" alt="">
+                <span v-else class="chest-slot-lock">🔒</span>
+              </span>
               <span class="chest-slot-title">{{ slot.title }}</span>
               <span v-if="slot.label" class="chest-slot-action" :class="{ open: slot.ready }">{{ slot.label }}</span>
             </button>
@@ -1714,7 +1755,7 @@ createApp({
               <div class="quest-daily-bar wide">
                 <div class="quest-daily-fill" :style="{width: questDailyPct+'%'}"></div>
               </div>
-              <div class="quest-progress-chest">📦</div>
+              <div class="quest-progress-chest"><img class="game-icon chest-ico" :src="iconUrl('chest-wood')" alt=""></div>
             </div>
             <div class="quest-progress-count">{{ questsDoneToday }} / {{ questsTotalToday || victoryRequired }} квестов</div>
           </div>
@@ -1739,7 +1780,9 @@ createApp({
               :class="{ done: q.status==='done', failed: q.status==='failed' }"
               @click="q.status==='pending' && openQuest(q)"
             >
-              <div class="quest-ico" :class="statIconClass(q.stat_key)">{{ statIcon(q.stat_key) }}</div>
+              <div class="quest-ico" :class="statIconClass(q.stat_key)">
+                <img class="game-icon quest-ico-img" :src="statIconUrl(q.stat_key)" alt="">
+              </div>
               <div class="quest-card-body">
                 <div class="quest-card-title">{{ q.title }}</div>
                 <div class="quest-card-meta">
@@ -1764,7 +1807,7 @@ createApp({
           <div v-if="!leagueData" class="empty-state"><p>Загрузка...</p></div>
           <template v-else>
             <div class="league-current-card">
-              <div class="league-shield-ico">🛡️</div>
+              <img class="game-icon league-shield-img" :src="iconUrl('league-gold')" alt="">
               <div class="league-current-info">
                 <div class="league-current-label">Текущая лига</div>
                 <div class="league-current-name">{{ leagueData.tier }}</div>
@@ -1988,7 +2031,9 @@ createApp({
           <div class="stats-grid-v7">
             <div v-for="key in statKeys" :key="key" class="stat-card-v7" @click="openStatCard(key)">
               <div class="stat-card-v7-head">
-                <div class="quest-ico" :class="statIconClass(key)">{{ statIcon(key) }}</div>
+                <div class="quest-ico" :class="statIconClass(key)">
+                  <img class="game-icon quest-ico-img" :src="statIconUrl(key)" alt="">
+                </div>
                 <div class="stat-card-v7-title-wrap">
                   <div class="stat-card-v7-name">{{ statLabelPlain(key) }}</div>
                   <div class="stat-card-v7-lvl">{{ displayProfile.stats_levels?.[key] ?? 0 }} ур.</div>
@@ -2048,13 +2093,13 @@ createApp({
 
           <div class="profile-menu">
             <div class="profile-menu-item" @click="switchTab('league')">
-              <span class="profile-menu-ico">🏆</span><span>Достижения</span><span class="profile-menu-chev">›</span>
+              <img class="game-icon menu-ico" :src="iconUrl('ico-achievements')" alt=""><span>Достижения</span><span class="profile-menu-chev">›</span>
             </div>
             <div class="profile-menu-item" @click="switchTab('journal')">
-              <span class="profile-menu-ico">📅</span><span>История</span><span class="profile-menu-chev">›</span>
+              <img class="game-icon menu-ico" :src="iconUrl('ico-journal')" alt=""><span>История</span><span class="profile-menu-chev">›</span>
             </div>
             <div class="profile-menu-item" @click="switchTab('shop')">
-              <span class="profile-menu-ico">⚙️</span><span>Настройки</span><span class="profile-menu-chev">›</span>
+              <img class="game-icon menu-ico" :src="iconUrl('ico-settings')" alt=""><span>Настройки</span><span class="profile-menu-chev">›</span>
             </div>
             <div v-if="isAdmin" class="profile-menu-item" @click="switchTab('admin')">
               <span class="profile-menu-ico">👑</span><span>Админка</span><span class="profile-menu-chev">›</span>
@@ -2171,23 +2216,23 @@ createApp({
 
       <nav v-if="!showOnboarding" class="bottom-nav-v7">
         <button type="button" class="nav-v7-item" :class="{active: tab==='home'}" @click="switchTab('home')">
-          <span class="nav-ico">🏰</span><span class="nav-label">Главная</span>
+          <img class="game-icon nav-ico-img" :src="iconUrl('nav-home')" alt=""><span class="nav-label">Главная</span>
         </button>
         <button type="button" class="nav-v7-item" :class="{active: tab==='quests'}" @click="switchTab('quests')">
           <span class="nav-ico-wrap">
-            <span class="nav-ico">📜</span>
+            <img class="game-icon nav-ico-img" :src="iconUrl('nav-quests')" alt="">
             <span v-if="navQuestBadge" class="nav-badge">{{ navQuestBadge }}</span>
           </span>
           <span class="nav-label">Квесты</span>
         </button>
         <button type="button" class="nav-v7-item" :class="{active: tab==='stats'}" @click="switchTab('stats')">
-          <span class="nav-ico">📊</span><span class="nav-label">Статы</span>
+          <img class="game-icon nav-ico-img" :src="iconUrl('nav-stats')" alt=""><span class="nav-label">Статы</span>
         </button>
         <button type="button" class="nav-v7-item" :class="{active: tab==='clan'}" @click="switchTab('clan')">
-          <span class="nav-ico">🛡️</span><span class="nav-label">Клан</span>
+          <img class="game-icon nav-ico-img" :src="iconUrl('nav-clan')" alt=""><span class="nav-label">Клан</span>
         </button>
         <button type="button" class="nav-v7-item" :class="{active: tab==='profile'}" @click="switchTab('profile')">
-          <span class="nav-ico">👤</span><span class="nav-label">Профиль</span>
+          <img class="game-icon nav-ico-img" :src="iconUrl('nav-profile')" alt=""><span class="nav-label">Профиль</span>
         </button>
       </nav>
       <!-- Work on quest / Complete -->
@@ -2377,11 +2422,11 @@ createApp({
         <div class="modal chest-reward-modal">
           <button type="button" class="chest-modal-close" @click="showChestLoot=false">×</button>
           <h3 class="chest-modal-title">{{ chestLoot.title || 'Золотой сундук' }}</h3>
-          <div class="chest-reward-visual chest-glow">📦</div>
+          <div class="chest-reward-visual chest-glow"><img class="game-icon chest-reward-img" :src="iconUrl('chest-gold')" alt=""></div>
           <div class="chest-reward-label">Твоя награда:</div>
           <div class="chest-reward-list">
             <div v-for="(item, idx) in (chestLoot.loot?.items || [])" :key="idx" class="chest-reward-item">
-              <span class="ico">{{ item.type === 'coins' ? '🪙' : item.type === 'xp' ? '⭐' : '💎' }}</span>
+              <img class="game-icon reward-ico" :src="item.type === 'coins' ? iconUrl('coin-gold') : item.type === 'xp' ? iconUrl('res-xp') : iconUrl('coin-gem')" alt="">
               <span class="val">+{{ item.amount || item.value }}</span>
             </div>
           </div>
