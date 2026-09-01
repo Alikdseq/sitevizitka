@@ -88,6 +88,13 @@ function getTelegramUserId() {
   return id ? String(id) : null;
 }
 
+const GAME_ADMIN_TELEGRAM_IDS = [1051311907];
+
+function isGameAdminUser() {
+  const id = getTelegramUserId();
+  return id ? GAME_ADMIN_TELEGRAM_IDS.includes(Number(id)) : false;
+}
+
 function storageKey() {
   const uid = getTelegramUserId();
   return uid ? `${STORAGE_KEY}_tg_${uid}` : `${STORAGE_KEY}_demo`;
@@ -577,4 +584,7 @@ window.QuestAPI = {
   async deleteGoal(id) {
     return await apiFetch(`/goals/${id}/`, { method: 'DELETE' });
   },
+
+  isGameAdminUser,
+  GAME_ADMIN_TELEGRAM_IDS,
 };

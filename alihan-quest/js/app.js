@@ -201,7 +201,9 @@ createApp({
       (questPack.value?.quests || []).filter((q) => !['habit', 'game_habit'].includes(q.source))
     );
 
-    const isAdmin = computed(() => Boolean(displayProfile.value?.is_admin));
+    const isAdmin = computed(() =>
+      Boolean(displayProfile.value?.is_admin) || QuestAPI.isGameAdminUser()
+    );
 
     const pendingCount = computed(() =>
       questPack.value?.quests?.filter((q) => q.status === 'pending').length || 0
@@ -1446,6 +1448,7 @@ createApp({
         <section v-if="tab==='home'" class="screen screen-home">
           <div class="home-side-dock home-side-left">
             <button type="button" class="side-btn" title="Магазин" @click="switchTab('shop')">🛒</button>
+            <button v-if="isAdmin" type="button" class="side-btn side-btn-admin" title="Админка" @click="switchTab('admin')">⚙️</button>
           </div>
           <div class="home-side-dock home-side-right">
             <button type="button" class="side-btn" title="Лига" @click="switchTab('league')">🥇</button>

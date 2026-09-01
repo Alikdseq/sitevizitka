@@ -916,6 +916,10 @@ body.theme-forest { --bg: #071510; --card: #0f2419; --gold: #4ade80; }
   align-items: center;
   justify-content: center;
 }
+.home-side-dock .side-btn-admin {
+  border-color: rgba(251,191,36,0.45);
+  box-shadow: 0 4px 14px rgba(251,191,36,0.2);
+}
 .home-side-left { left: 6px; }
 .home-side-right { right: 6px; }
 
