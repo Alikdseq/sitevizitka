@@ -1,10 +1,22 @@
 const { createApp, ref, computed, watch, onMounted } = Vue;
 
 const STAT_LABELS = {
-  capital: '💰 Капитал', entrepreneur: '💼 Предприниматель', mastery: '🧠 Мастерство',
-  mabibip: '🚀 МаБибип', media: '🎥 Медийность', form: '💪 Форма',
-  network: '🤝 Связи', discipline: '⚡ Дисциплина',
+  capital: 'Капитал', entrepreneur: 'Предприниматель', mastery: 'Мастерство',
+  mabibip: 'МаБибип', media: 'Медийность', form: 'Форма',
+  network: 'Связи', discipline: 'Дисциплина',
 };
+
+const STAT_ICONS = {
+  capital: '💰', entrepreneur: '💼', mastery: '🧠',
+  mabibip: '🚀', media: '🎥', form: '💪',
+  network: '🤝', discipline: '⚡',
+};
+
+function statIconClass(key) {
+  const k = (key || 'discipline').replace(/[^a-z_]/gi, '');
+  const known = ['capital', 'entrepreneur', 'mastery', 'mabibip', 'media', 'form', 'network', 'discipline'];
+  return known.includes(k) ? `stat-ico-${k}` : 'stat-ico-default';
+}
 
 const REFLECTION_FIELDS = [
   { key: 'what', label: 'Что произошло?' },
@@ -69,8 +81,8 @@ function setupTelegramViewport() {
     tg.onEvent('viewportChanged', apply);
   }
 
-  try { tg.setHeaderColor('#0a0e18'); } catch { /* old Telegram clients */ }
-  try { tg.setBackgroundColor('#0a0e18'); } catch { /* old Telegram clients */ }
+  try { tg.setHeaderColor('#0b1729'); } catch { /* old Telegram clients */ }
+  try { tg.setBackgroundColor('#0b1729'); } catch { /* old Telegram clients */ }
 }
 
 function pickData(result, fallback) {
@@ -95,6 +107,8 @@ function todayStr() {
 createApp({
   setup() {
     const tab = ref('home');
+    const questViewTab = ref('day');
+    const goalsViewTab = ref('my');
     const profile = ref(QuestAPI.cachedProfile());
     const questPack = ref(QuestAPI.cachedQuests());
     const apiOnline = ref(false);
@@ -205,6 +219,105 @@ createApp({
       Boolean(displayProfile.value?.is_admin) || QuestAPI.isGameAdminUser()
     );
 
+    const hudInitial = computed(() => {
+      const n = displayProfile.value?.display_name || 'И';
+      return n.trim().charAt(0).toUpperCase();
+    });
+
+    const questCoins = computed(() => displayProfile.value?.gamification?.quest_coins ?? 0);
+
+    const allQuestsToday = computed(() => {
+      const qs = questPack.value?.quests || [];
+      return [...qs];
+    });
+
+    const questsDoneToday = computed(() =>
+      allQuestsToday.value.filter((q) => q.status === 'done').length
+    );
+
+    const questsTotalToday = computed(() => allQuestsToday.value.length);
+
+    const questDailyPct = computed(() => {
+      const t = questsTotalToday.value;
+      if (!t) return 0;
+      return Math.min(100, Math.round((questsDoneToday.value / t) * 100));
+    });
+
+    const victoryRequired = computed(() => chestSummary.value?.victory_progress?.required || 3);
+
+    const chestSlotsUi = computed(() => {
+      const slots = [];
+      const ready = readyChests.value || [];
+      const victoryDone = chestSummary.value?.victory_progress?.completed || 0;
+      const victoryReq = victoryRequired.value;
+      if (ready[0]) {
+        slots.push({ type: 'ready', icon: ready[0].icon || '🏆', label: 'Золотой', chest: ready[0], ready: true });
+      } else if (victoryDone >= victoryReq) {
+        slots.push({ type: 'victory', icon: '🏆', label: 'Победа', ready: false });
+      } else {
+        slots.push({ type: 'victory', icon: '🏆', label: `${victoryDone}/${victoryReq}`, ready: false });
+      }
+      slots.push({
+        type: 'morning',
+        icon: '🌅',
+        label: chestSummary.value?.morning_available ? 'Утро' : 'Утро ✓',
+        ready: chestSummary.value?.morning_available,
+        action: 'morning',
+      });
+      slots.push({
+        type: 'evening',
+        icon: '🌙',
+        label: chestSummary.value?.evening_available ? 'Вечер' : 'Вечер ✓',
+        ready: chestSummary.value?.evening_available,
+        action: 'evening',
+      });
+      slots.push({ type: 'locked', icon: '🔒', label: 'Скоро', locked: true });
+      return slots;
+    });
+
+    const profileMenuDays = computed(() => {
+      const streak = displayProfile.value?.action_streak || 0;
+      return Math.max(streak, displayProfile.value?.level || 1);
+    });
+
+    const profileQuestsDone = computed(() => {
+      const g = displayProfile.value?.gamification;
+      if (g?.daily_quests_completed_today) return g.daily_quests_completed_today;
+      return questsDoneToday.value;
+    });
+
+    const showGameHud = computed(() => {
+      const hidden = ['journal', 'admin'];
+      return !hidden.includes(tab.value);
+    });
+
+    function statLabelPlain(key) {
+      const labels = displayProfile.value?.stat_labels;
+      if (labels?.[key]) return labels[key].replace(/^[^\s]+\s/, '');
+      return STAT_LABELS[key] || key;
+    }
+
+    function statIcon(key) {
+      return STAT_ICONS[key] || '⭐';
+    }
+
+    function onChestSlotClick(slot) {
+      if (slot.chest?.id) return openReadyChest(slot.chest);
+      if (slot.action === 'morning' && chestSummary.value?.morning_available) return claimMorning();
+      if (slot.action === 'evening' && chestSummary.value?.evening_available) return openEveningChestModal();
+      if (slot.ready && slot.action === 'morning') return claimMorning();
+    }
+
+    function shareFriends() {
+      shareReferralLink();
+    }
+
+    function closeMiniApp() {
+      const tg = window.Telegram?.WebApp;
+      if (tg?.close) tg.close();
+      else showToast('Закрой Mini App вручную');
+    }
+
     const pendingCount = computed(() =>
       questPack.value?.quests?.filter((q) => q.status === 'pending').length || 0
     );
@@ -230,7 +343,9 @@ createApp({
     function statLabel(key) {
       const labels = displayProfile.value?.stat_labels;
       if (labels?.[key]) return labels[key];
-      return STAT_LABELS[key] || key;
+      const plain = STAT_LABELS[key] || key;
+      const ico = STAT_ICONS[key] || '';
+      return ico ? `${ico} ${plain}` : plain;
     }
 
     function statRule(key) {
@@ -1333,6 +1448,8 @@ createApp({
       if (name === 'clan') await loadClan();
       if (name === 'shop') await loadShop();
       if (name === 'admin') await loadAdmin();
+      if (name === 'profile') await refresh();
+      if (name === 'quests' && questViewTab.value === 'goals') tab.value = 'goals';
       if (name === 'journal') {
         await Promise.all([loadCalendar(), loadJournalInsights()]);
       }
@@ -1377,6 +1494,11 @@ createApp({
       clanData, clanForm, shopThemes, subscription, shopCourses, referralInfo, isAdmin,
       adminDashboard, adminPlayers, adminEditForm, editingAdminPlayerId,
       habitQuests, gameHabitQuests, regularQuests,
+      questViewTab, goalsViewTab, showGameHud, hudInitial, questCoins,
+      questsDoneToday, questsTotalToday, questDailyPct, chestSlotsUi,
+      profileMenuDays, profileQuestsDone,
+      statIconClass, statLabelPlain, statIcon,
+      onChestSlotClick, shareFriends, closeMiniApp,
       chestSummary, victoryProgressPct, readyChests,
       activeQuest, detailQuest, importJson, reflection, progressNotes,
       questForm, goalForm, editingGoalId,
@@ -1439,205 +1561,218 @@ createApp({
         🗄 БД · player #{{ syncInfo.player_id }} · {{ syncInfo.quest_count }} задач ({{ syncInfo.manual_count || 0 }} вручную) · бот видит то же
       </div>
 
-      <header v-if="tab !== 'journal'" class="app-top-bar">
-        <button type="button" class="top-bar-btn" @click="switchTab('journal')">📅 Журнал</button>
+      <header v-if="showGameHud" class="game-hud">
+        <div class="hud-profile">
+          <div class="hud-avatar-wrap">
+            <div class="hud-avatar">{{ hudInitial }}</div>
+            <span class="hud-level-badge">{{ displayProfile.level }}</span>
+          </div>
+          <div class="hud-name">{{ displayProfile.display_name }}</div>
+        </div>
+        <div class="hud-currencies">
+          <div class="hud-pill gold"><span class="ico">🪙</span>{{ fmtNum(questCoins) }}</div>
+          <div class="hud-pill gem"><span class="ico">💎</span>{{ fmtNum(displayProfile.total_xp) }}</div>
+        </div>
+      </header>
+
+      <header v-else-if="tab === 'journal'" class="app-top-bar">
+        <button type="button" class="top-bar-btn" @click="switchTab('home')">← Назад</button>
       </header>
 
       <main class="main-content">
         <!-- HOME -->
         <section v-if="tab==='home'" class="screen screen-home">
-          <div class="home-side-dock home-side-left">
-            <button type="button" class="side-btn" title="Магазин" @click="switchTab('shop')">🛒</button>
-            <button v-if="isAdmin" type="button" class="side-btn side-btn-admin" title="Админка" @click="switchTab('admin')">⚙️</button>
-          </div>
-          <div class="home-side-dock home-side-right">
-            <button type="button" class="side-btn" title="Лига" @click="switchTab('league')">🥇</button>
-            <button type="button" class="side-btn" title="Клан" @click="switchTab('clan')">⚔️</button>
-          </div>
-          <div class="hero-card">
-            <div class="hero-name">{{ displayProfile.display_name }}</div>
-            <div class="hero-level">УРОВЕНЬ {{ displayProfile.level }}</div>
-            <div class="hero-title">«{{ displayProfile.title }}»</div>
-            <div class="hero-level-hint">Среднее уровней ваших характеристик</div>
-            <div class="xp-bar-wrap">
-              <div class="xp-label"><span>⭐ XP</span><span>{{ fmtNum(displayProfile.xp_in_level) }} / {{ fmtNum(displayProfile.xp_needed) }}</span></div>
-              <div class="xp-bar"><div class="xp-fill" :style="{width: xpPercent+'%'}"></div></div>
+          <div class="home-arena">
+            <div class="home-side-dock home-side-left">
+              <div class="side-btn-wrap">
+                <button type="button" class="side-btn" title="Сундуки" @click="onChestSlotClick(chestSlotsUi[0])">📦</button>
+                <span class="side-btn-label">Сундуки</span>
+              </div>
+              <div class="side-btn-wrap">
+                <button type="button" class="side-btn" title="Цели" @click="switchTab('goals')">🎯</button>
+                <span class="side-btn-label">Цели</span>
+              </div>
+              <div class="side-btn-wrap">
+                <button type="button" class="side-btn" title="Лига" @click="switchTab('league')">🥇</button>
+                <span class="side-btn-label">Лига</span>
+              </div>
+              <div v-if="isAdmin" class="side-btn-wrap">
+                <button type="button" class="side-btn side-btn-admin" title="Админ" @click="switchTab('admin')">⚙️</button>
+              </div>
             </div>
-            <div class="streak">🔥 СЕРИЯ ДЕЙСТВИЙ · {{ displayProfile.action_streak }} дней</div>
-            <div v-if="displayProfile.gamification" class="hero-meta-row">
-              <span>🪙 {{ displayProfile.gamification.quest_coins }} монет</span>
-              <span v-if="displayProfile.gamification.quest_pro" class="pro-badge">ПРО</span>
+            <div class="home-side-dock home-side-right">
+              <div class="side-btn-wrap">
+                <button type="button" class="side-btn" title="Магазин" @click="switchTab('shop')">🛒</button>
+                <span class="side-btn-label">Магазин</span>
+              </div>
+              <div class="side-btn-wrap">
+                <button type="button" class="side-btn" title="Квесты" @click="switchTab('quests')">⚔️</button>
+                <span class="side-btn-label">События</span>
+              </div>
+              <div class="side-btn-wrap">
+                <button type="button" class="side-btn" title="Клан" @click="switchTab('clan')">🛡️</button>
+                <span class="side-btn-label">Клан</span>
+              </div>
+              <div class="side-btn-wrap">
+                <button type="button" class="side-btn" title="Друзья" @click="shareFriends">👥</button>
+                <span class="side-btn-label">Друзья</span>
+              </div>
             </div>
-          </div>
-
-          <div v-if="displayProfile.season_v2" class="season-banner season-v2">
-            🏆 {{ displayProfile.season_v2.title }}<br>
-            ⚡ XP сезона: <strong>{{ fmtNum(displayProfile.season_v2.season_xp) }}</strong>
-            · 🥇 {{ displayProfile.season_v2.league_tier }}
-            · {{ displayProfile.season_v2.days_left }} дн. до конца
-          </div>
-          <div v-else-if="displayProfile.season" class="season-banner">
-            🏆 SEASON {{ String(displayProfile.season.number).padStart(2,'0') }} — <strong>{{ displayProfile.season.title }}</strong><br>
-            🐉 Босс: {{ displayProfile.season.boss_name }}
-          </div>
-
-          <div v-if="chestSummary" class="chest-panel card">
-            <div class="section-head">📦 Ежедневные сундуки</div>
-            <div class="chest-victory-row">
-              <span>Сундук победы</span>
-              <span>{{ chestSummary.victory_progress?.completed || 0 }}/{{ chestSummary.victory_progress?.required || 3 }} квестов</span>
-            </div>
-            <div class="progress-mini"><div class="progress-mini-fill gold" :style="{width: victoryProgressPct+'%'}"></div></div>
-            <div class="chest-actions">
-              <button type="button" class="btn btn-sm" :disabled="!chestSummary.morning_available" @click="claimMorning">
-                🌅 Утро
-              </button>
-              <button type="button" class="btn btn-sm" :disabled="!chestSummary.evening_available" @click="openEveningChestModal">
-                🌙 Вечер
-              </button>
-            </div>
-            <div v-if="readyChests.length" class="chest-ready-list">
-              <button
-                v-for="c in readyChests"
-                :key="c.id"
-                type="button"
-                class="chest-ready-btn"
-                @click="openReadyChest(c)"
-              >
-                {{ c.icon || '📦' }} {{ c.title }} — открыть
-              </button>
+            <div class="arena-scene">
+              <div class="arena-portal"></div>
+              <div class="arena-level-float">
+                <div class="arena-level-num">{{ displayProfile.level }}</div>
+                <div class="arena-xp-bar">
+                  <div class="arena-xp-fill" :style="{width: xpPercent+'%'}"></div>
+                </div>
+                <div class="arena-xp-label">{{ fmtNum(displayProfile.xp_in_level) }} / {{ fmtNum(displayProfile.xp_needed) }} XP</div>
+              </div>
+              <div class="arena-island"></div>
+              <div class="arena-hero"></div>
             </div>
           </div>
 
-          <div v-if="displayProfile.league" class="league-mini card" @click="switchTab('league')">
-            🥇 {{ displayProfile.league.tier }} · Место #{{ displayProfile.league.rank }}
-            · {{ displayProfile.league.weekly_xp }} XP / неделя
-            <span v-if="displayProfile.league.in_promotion_zone" class="zone-badge promote">↑</span>
-            <span v-else-if="displayProfile.league.in_demotion_zone" class="zone-badge demote">↓</span>
+          <button type="button" class="btn-cta-quest" @click="switchTab('quests')">В КВЕСТ</button>
+
+          <div class="chest-row">
+            <button
+              v-for="(slot, idx) in chestSlotsUi"
+              :key="idx"
+              type="button"
+              class="chest-slot"
+              :class="{ ready: slot.ready, locked: slot.locked }"
+              :disabled="slot.locked"
+              @click="onChestSlotClick(slot)"
+            >
+              <span class="chest-slot-icon">{{ slot.icon }}</span>
+              <span class="chest-slot-label">{{ slot.label }}</span>
+            </button>
+          </div>
+
+          <div v-if="displayProfile.season_v2" class="season-banner season-v2 card" style="margin-top:12px">
+            🏆 {{ displayProfile.season_v2.title }} · {{ fmtNum(displayProfile.season_v2.season_xp) }} XP сезона
           </div>
 
           <div v-if="displayProfile.goals?.length" class="section-head" style="margin-top:16px">🎯 Ближайшие цели</div>
-          <div v-for="g in (displayProfile.goals || []).slice(0, 3)" :key="g.id" class="goal-block" @click="switchTab('goals')">
-            <div class="goal-block-head">
-              <h4>{{ g.emoji || '🎯' }} {{ g.title }}</h4>
+          <div v-for="g in (displayProfile.goals || []).slice(0, 2)" :key="g.id" class="goal-card-v7" @click="switchTab('goals')">
+            <div class="goal-card-v7-head">
+              <span class="goal-card-v7-title">{{ g.emoji || '🎯' }} {{ g.title }}</span>
+              <span v-if="g.target_value" class="goal-card-v7-pct">{{ pct(g.current_value, g.target_value) }}%</span>
             </div>
-            <p class="goal-text">{{ goalProgressLabel(g) }}</p>
-            <div v-if="g.target_value" class="progress-mini goal-progress">
-              <div class="progress-mini-fill" :style="{width: pct(g.current_value, g.target_value)+'%'}"></div>
+            <div v-if="g.target_value" class="goal-card-v7-values">{{ fmtNum(g.current_value) }} / {{ fmtNum(g.target_value) }} {{ g.metric_unit }}</div>
+            <div v-if="g.target_value" class="stat-mini-bar">
+              <div class="stat-mini-fill" :style="{width: pct(g.current_value, g.target_value)+'%'}"></div>
             </div>
           </div>
         </section>
 
         <!-- QUESTS -->
         <section v-else-if="tab==='quests'" class="screen">
-          <div class="section-head-row">
-            <div class="section-head">⚔️ Квесты дня</div>
-            <button type="button" class="edit-btn" @click="openAddQuest">+ Добавить</button>
+          <div class="screen-title">Квесты</div>
+
+          <div class="tab-pills">
+            <button type="button" class="tab-pill" :class="{active: questViewTab==='day'}" @click="questViewTab='day'">День</button>
+            <button type="button" class="tab-pill" :class="{active: questViewTab==='week'}" @click="questViewTab='week'; showToast('Неделя — в журнале')">Неделя</button>
+            <button type="button" class="tab-pill" :class="{active: questViewTab==='month'}" @click="switchTab('journal')">Месяц</button>
+            <button type="button" class="tab-pill" :class="{active: questViewTab==='goals'}" @click="switchTab('goals')">Цели</button>
           </div>
 
-          <div class="quest-actions-row">
-            <button type="button" class="btn btn-secondary btn-sm" @click="openImport(false)">📥 Импорт JSON</button>
-            <button type="button" class="btn btn-secondary btn-sm" @click="refresh">↻ Обновить</button>
+          <div v-if="questViewTab==='day'" class="quest-daily-progress">
+            <div class="quest-daily-progress-head">
+              <span>Прогресс дня</span>
+              <span>{{ questsDoneToday }} / {{ questsTotalToday || victoryRequired }} квестов</span>
+            </div>
+            <div class="quest-daily-bar">
+              <div class="quest-daily-fill" :style="{width: questDailyPct+'%'}"></div>
+              <span class="quest-daily-chest-ico">📦</span>
+            </div>
           </div>
 
-          <div v-if="!questPack.quests.length && !habitQuests.length && !gameHabitQuests.length" class="empty-state">
-            <p>⚔️ Задания на сегодня не созданы</p>
-            <button type="button" class="btn btn-primary" @click="openImport(false)">Импортировать Quest Pack →</button>
+          <div class="section-head-row" style="margin-bottom:10px">
+            <span class="screen-sub" style="margin:0">Сегодня · {{ questPack.date }}</span>
+            <button type="button" class="edit-btn" @click="openAddQuest">+</button>
+          </div>
+
+          <div v-if="questPack.main_mission" class="quest-mission">🔥 {{ questPack.main_mission }}</div>
+
+          <div v-if="!allQuestsToday.length" class="empty-state">
+            <p>Квестов нет — добавь или импортируй</p>
+            <button type="button" class="btn btn-primary" @click="openImport(false)">Импорт Quest Pack</button>
           </div>
 
           <template v-else>
-            <div v-if="questPack.main_mission" class="quest-mission">
-              🔥 <strong>Главная миссия:</strong> {{ questPack.main_mission }}
-            </div>
-            <p class="quest-meta">{{ pendingCount }} активных · {{ questPack.date }}</p>
-
-            <div v-if="habitQuests.length" class="habit-block">
-              <div class="section-head progress-subhead">⚡ Мои привычки</div>
-              <div v-for="q in habitQuests" :key="'h-'+q.id"
-                   class="quest-item"
-                   :class="{done: q.status==='done', failed: q.status==='failed'}"
-                   @click="openQuest(q)">
-                <div class="quest-check">{{ q.status==='done' ? '✓' : '' }}</div>
-                <div class="quest-body">
-                  <div class="quest-title">{{ q.title }}</div>
-                  <div class="quest-xp">+{{ q.xp_reward }} XP · {{ statLabel(q.stat_key) }} · привычка</div>
+            <div v-if="habitQuests.length" class="section-head progress-subhead">Мои привычки</div>
+            <div v-for="q in habitQuests" :key="'h-'+q.id"
+                 class="quest-card-v7" :class="{done: q.status==='done'}"
+                 @click="q.status==='pending' && openQuest(q)">
+              <div class="quest-ico" :class="statIconClass(q.stat_key)">{{ statIcon(q.stat_key) }}</div>
+              <div class="quest-card-body">
+                <div class="quest-card-title">{{ q.title }}</div>
+                <div class="quest-card-meta">
+                  <span class="tag">{{ statLabelPlain(q.stat_key) }}</span> +{{ q.xp_reward }} XP
                 </div>
               </div>
+              <div v-if="q.status==='done'" class="quest-done-check">✓</div>
+              <button v-else type="button" class="btn-complete" @click.stop="openQuest(q)">Выполнить</button>
             </div>
 
-            <div v-if="gameHabitQuests.length" class="habit-block">
-              <div class="section-head progress-subhead">🎲 Привычки от игры</div>
-              <div v-for="q in gameHabitQuests" :key="'g-'+q.id"
-                   class="quest-item"
-                   :class="{done: q.status==='done', failed: q.status==='failed'}"
-                   @click="openQuest(q)">
-                <div class="quest-check">{{ q.status==='done' ? '✓' : '' }}</div>
-                <div class="quest-body">
-                  <div class="quest-title">{{ q.title }}</div>
-                  <div class="quest-xp">+{{ q.xp_reward }} XP · {{ statLabel(q.stat_key) }} · <span class="habit-badge">ИГРА</span></div>
+            <div v-if="gameHabitQuests.length" class="section-head progress-subhead">От игры</div>
+            <div v-for="q in gameHabitQuests" :key="'g-'+q.id"
+                 class="quest-card-v7" :class="{done: q.status==='done'}"
+                 @click="q.status==='pending' && openQuest(q)">
+              <div class="quest-ico stat-ico-discipline">🎲</div>
+              <div class="quest-card-body">
+                <div class="quest-card-title">{{ q.title }}</div>
+                <div class="quest-card-meta"><span class="tag">ИГРА</span> +{{ q.xp_reward }} XP</div>
+              </div>
+              <div v-if="q.status==='done'" class="quest-done-check">✓</div>
+              <button v-else type="button" class="btn-complete" @click.stop="openQuest(q)">Выполнить</button>
+            </div>
+
+            <div v-if="regularQuests.length" class="section-head progress-subhead">Задачи</div>
+            <div v-for="q in regularQuests" :key="q.id"
+                 class="quest-card-v7 quest-swipe-wrap"
+                 :class="{done: q.status==='done', failed: q.status==='failed'}"
+                 :style="questSwipeStyle(q)"
+                 @touchstart.passive="onQuestTouchStart(q, $event)"
+                 @touchmove.passive="onQuestTouchMove(q, $event)"
+                 @touchend="onQuestTouchEnd(q)"
+                 @click="q.status==='pending' && openQuest(q)">
+              <div class="quest-ico" :class="statIconClass(q.stat_key)">{{ statIcon(q.stat_key) }}</div>
+              <div class="quest-card-body">
+                <div class="quest-card-title">{{ q.title }}</div>
+                <div class="quest-card-meta">
+                  <span class="tag">{{ statLabelPlain(q.stat_key) }}</span> +{{ q.xp_reward }} XP
                 </div>
               </div>
+              <div v-if="q.status==='done'" class="quest-done-check">✓</div>
+              <button v-else-if="q.status==='pending'" type="button" class="btn-complete" @click.stop="openQuest(q)">Выполнить</button>
             </div>
 
-            <div v-if="regularQuests.length">
-              <div class="section-head progress-subhead">📋 Задачи</div>
+            <div class="quest-actions-row" style="margin-top:12px">
+              <button type="button" class="btn btn-secondary btn-sm" @click="openImport(false)">📥 Импорт</button>
+              <button type="button" class="btn btn-secondary btn-sm" @click="switchTab('habits')">🌱 Привычки</button>
             </div>
-            <template v-for="(quests, statKey) in questsByStat" :key="statKey">
-              <div class="quest-group-title">{{ statLabel(statKey) }}</div>
-              <div v-for="q in quests" :key="q.id"
-                   class="quest-item quest-swipe-wrap"
-                   :class="{done: q.status==='done', failed: q.status==='failed', swiping: swipe.id===q.id && swipe.deltaX}"
-                   :style="questSwipeStyle(q)"
-                   @touchstart.passive="onQuestTouchStart(q, $event)"
-                   @touchmove.passive="onQuestTouchMove(q, $event)"
-                   @touchend="onQuestTouchEnd(q)"
-                   @click="openQuest(q)">
-                <div v-if="q.status==='pending'" class="quest-swipe-hint">→ завтра</div>
-                <div class="quest-check">{{ q.status==='done' ? '✓' : '' }}</div>
-                <div class="quest-body">
-                  <div class="quest-title">{{ q.title }}<span v-if="q.progress_notes" class="quest-has-notes" title="Есть заметки"> 📝</span></div>
-                  <div class="quest-xp">+{{ q.xp_reward }} XP · {{ statLabel(q.stat_key) }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
-                </div>
-                <div v-if="q.status==='pending'" class="quest-actions" @click.stop>
-                  <button type="button" class="edit-btn edit-btn-sm" @click="openEditQuest(q)">✏️</button>
-                  <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="removeQuest(q, $event, 'quests')">🗑</button>
-                </div>
-              </div>
-            </template>
-
-            <button v-if="regularQuests.length" type="button" class="btn btn-secondary quest-refresh" @click="openReplaceImport">↻ Заменить Quest Pack</button>
           </template>
         </section>
 
         <!-- LEAGUE -->
         <section v-else-if="tab==='league'" class="screen">
-          <div class="section-head">🥇 Недельная лига</div>
+          <div class="screen-title">Лига</div>
           <div v-if="!leagueData" class="empty-state"><p>Загрузка...</p></div>
           <template v-else>
-            <div class="league-header card">
-              <div class="league-tier">{{ leagueData.tier }}</div>
-              <div class="league-meta">
-                Место <strong>#{{ leagueData.rank }}</strong> / {{ leagueData.member_count }}
-                · {{ leagueData.weekly_xp }} XP
-                · {{ leagueData.days_left }} дн.
-              </div>
-              <div class="league-zones">
-                <span class="zone-label promote">Топ {{ leagueData.promotion_zone }} → ↑</span>
-                <span class="zone-label demote">Низ {{ leagueData.demotion_zone }} → ↓</span>
-              </div>
+            <div class="league-banner-v7">
+              <div class="league-banner-tier">🥇 {{ leagueData.tier }}</div>
+              <div class="league-banner-trophies">{{ fmtNum(leagueData.weekly_xp) }} 🏆</div>
+              <div class="screen-sub">Место #{{ leagueData.rank }} · {{ leagueData.days_left }} дн.</div>
             </div>
-            <div class="league-list">
-              <div
-                v-for="m in leagueData.members"
-                :key="m.rank + '-' + m.display_name"
-                class="league-row"
-                :class="{ 'is-you': m.is_you, promote: m.rank <= leagueData.promotion_zone, demote: m.rank > leagueData.member_count - leagueData.demotion_zone && leagueData.demotion_zone }"
-              >
-                <span class="league-rank">#{{ m.rank }}</span>
-                <span class="league-name">{{ m.display_name }}</span>
-                <span class="league-xp">{{ m.weekly_xp }} XP</span>
-              </div>
+            <div v-for="m in leagueData.members" :key="m.rank + '-' + m.display_name"
+                 class="league-row-v7" :class="{ 'is-you': m.is_you }">
+              <div class="league-rank-badge" :class="{ top1: m.rank===1, top2: m.rank===2, top3: m.rank===3 }">{{ m.rank }}</div>
+              <div class="league-row-name">{{ m.display_name }}</div>
+              <div class="league-row-score">{{ m.weekly_xp }}</div>
             </div>
+            <button type="button" class="btn-new-goal" style="margin-top:16px" @click="loadLeague">↻ Обновить</button>
           </template>
         </section>
 
@@ -1680,7 +1815,8 @@ createApp({
 
         <!-- CLAN -->
         <section v-else-if="tab==='clan'" class="screen">
-          <div class="section-head">⚔️ Клановый спринт</div>
+          <div class="screen-title">Клан</div>
+          <p class="screen-sub">Социальный спринт — вместе к цели</p>
           <div v-if="!clanData" class="card clan-create">
             <p class="modal-sub">Клан 5–10 человек. Sprint стартует от 5 участников.</p>
             <div class="field">
@@ -1816,30 +1952,68 @@ createApp({
 
         <!-- STATS -->
         <section v-else-if="tab==='stats'" class="screen">
-          <div class="section-head-row">
-            <div class="section-head">📊 Характеристики</div>
-            <button type="button" class="edit-btn" @click="openStatAdd">+ Добавить</button>
+          <div class="screen-title">Статы</div>
+          <div class="stats-hero-card">
+            <div class="stats-level-ring">{{ displayProfile.level }}</div>
+            <div class="arena-xp-bar" style="width:100%;max-width:240px;margin:0 auto">
+              <div class="arena-xp-fill" :style="{width: xpPercent+'%'}"></div>
+            </div>
+            <div class="arena-xp-label">{{ fmtNum(displayProfile.xp_in_level) }} / {{ fmtNum(displayProfile.xp_needed) }} XP</div>
+            <p class="screen-sub" style="margin-top:8px">«{{ displayProfile.title }}»</p>
           </div>
-          <div class="stat-grid stat-grid-full">
-            <div v-for="key in statKeys" :key="key" class="stat-card stat-card-tap" @click="openStatCard(key)">
-              <div class="stat-card-head">
-                <div class="icon">{{ (statLabel(key) || '⭐').split(' ')[0] }}</div>
-                <span class="stat-level">УР. {{ displayProfile.stats_levels?.[key] ?? 0 }}</span>
+          <div class="section-head-row">
+            <span class="screen-sub" style="margin:0">Характеристики</span>
+            <button type="button" class="edit-btn" @click="openStatAdd">+</button>
+          </div>
+          <div class="stats-grid-v7">
+            <div v-for="key in statKeys" :key="key" class="stat-card-v7" @click="openStatCard(key)">
+              <div class="stat-card-v7-head">
+                <div class="quest-ico" :class="statIconClass(key)">{{ statIcon(key) }}</div>
+                <div>
+                  <div class="stat-card-v7-name">{{ statLabelPlain(key) }}</div>
+                  <div class="stat-card-v7-lvl">Ур. {{ displayProfile.stats_levels?.[key] ?? 0 }}</div>
+                </div>
               </div>
-              <div class="name">{{ (statLabel(key) || key).replace(/^\\S+\\s/, '') }}</div>
-              <div class="xp">{{ fmtNum(displayProfile.stats_xp?.[key] ?? 0) }} XP</div>
-              <div class="progress-mini goal-progress" style="margin-top:8px">
-                <div class="progress-mini-fill" :style="{width: pct(statProgress(key).current, statProgress(key).needed)+'%'}"></div>
+              <div class="stat-mini-bar">
+                <div class="stat-mini-fill" :style="{width: pct(statProgress(key).current, statProgress(key).needed)+'%'}"></div>
               </div>
-              <div class="stat-rule">{{ statProgress(key).current }} / {{ statProgress(key).needed }} XP · {{ statRule(key) }}</div>
             </div>
           </div>
-          <p class="rule-text">
-            <strong>Уровень героя</strong> = среднее уровней характеристик. Сейчас: {{ displayProfile.level }}.
-          </p>
-          <p class="rule-text">
-            <strong>XP квестов</strong> копится по каждой характеристике отдельно. Цели вроде «10 000 подписчиков» — в разделе «Цели».
-          </p>
+        </section>
+
+        <!-- PROFILE -->
+        <section v-else-if="tab==='profile'" class="screen">
+          <div class="profile-hero">
+            <div class="profile-avatar-lg">{{ hudInitial }}</div>
+            <div class="profile-name">{{ displayProfile.display_name }}</div>
+            <div class="profile-subtitle">«{{ displayProfile.title }}»</div>
+            <div class="arena-xp-bar" style="width:100%;max-width:200px;margin:12px auto 0">
+              <div class="arena-xp-fill" :style="{width: xpPercent+'%'}"></div>
+            </div>
+            <div class="arena-xp-label">Уровень {{ displayProfile.level }}</div>
+          </div>
+          <div class="profile-stats-row">
+            <div class="profile-stat-item">
+              <div class="profile-stat-num">{{ profileMenuDays }}</div>
+              <div class="profile-stat-label">дней в игре</div>
+            </div>
+            <div class="profile-stat-item">
+              <div class="profile-stat-num">{{ displayProfile.action_streak }}</div>
+              <div class="profile-stat-label">стрик</div>
+            </div>
+            <div class="profile-stat-item">
+              <div class="profile-stat-num">{{ profileQuestsDone }}</div>
+              <div class="profile-stat-label">квестов</div>
+            </div>
+          </div>
+          <div class="profile-menu">
+            <div class="profile-menu-item" @click="switchTab('league')"><span>🏆 Достижения</span><span>›</span></div>
+            <div class="profile-menu-item" @click="switchTab('journal')"><span>📅 История</span><span>›</span></div>
+            <div class="profile-menu-item" @click="switchTab('habits')"><span>🌱 Привычки</span><span>›</span></div>
+            <div class="profile-menu-item" @click="switchTab('shop')"><span>⚙️ Настройки / Магазин</span><span>›</span></div>
+            <div v-if="isAdmin" class="profile-menu-item" @click="switchTab('admin')"><span>👑 Админка</span><span>›</span></div>
+          </div>
+          <button type="button" class="btn-logout" @click="closeMiniApp">Выйти из игры</button>
         </section>
 
         <!-- JOURNAL -->
@@ -1911,38 +2085,52 @@ createApp({
 
         <!-- GOALS -->
         <section v-else-if="tab==='goals'" class="screen">
-          <div class="section-head-row">
-            <div class="section-head">🎯 Цели</div>
-            <button type="button" class="edit-btn" @click="openGoalAdd">+ Цель</button>
+          <div class="screen-title">Цели</div>
+          <div class="tab-pills">
+            <button type="button" class="tab-pill" :class="{active: goalsViewTab==='my'}" @click="goalsViewTab='my'">Мои цели</button>
+            <button type="button" class="tab-pill" :class="{active: goalsViewTab==='templates'}" @click="goalsViewTab='templates'; showToast('Шаблоны скоро')">Шаблоны</button>
           </div>
-          <p class="rule-text" style="margin-bottom:16px">Жизненные цели — подписчики, накопления, вес. Не влияют на уровень, только показывают прогресс.</p>
-          <div v-if="!profile.goals?.length" class="empty-state">
-            <p>Добавь первую цель — например «10 000 подписчиков» или «накопить на дом».</p>
-          </div>
-          <div v-for="g in profile.goals" :key="g.id || g.title" class="goal-block">
-            <div class="goal-block-head">
-              <h4>{{ g.emoji || '🎯' }} {{ g.title }}</h4>
-              <div>
+          <div v-if="goalsViewTab==='my'">
+            <div v-if="!profile.goals?.length" class="empty-state">
+              <p>Добавь цель — накопления, подписчики, вес</p>
+            </div>
+            <div v-for="g in profile.goals" :key="g.id || g.title" class="goal-card-v7">
+              <div class="goal-card-v7-head">
+                <span class="goal-card-v7-title">{{ g.emoji || '🎯' }} {{ g.title }}</span>
+                <span v-if="g.target_value" class="goal-card-v7-pct">{{ pct(g.current_value, g.target_value) }}%</span>
+              </div>
+              <p v-if="g.description" class="goal-card-v7-values">{{ g.description }}</p>
+              <div v-if="g.target_value" class="goal-card-v7-values">{{ fmtNum(g.current_value) }} / {{ fmtNum(g.target_value) }} {{ g.metric_unit }}</div>
+              <div v-if="g.target_value" class="stat-mini-bar">
+                <div class="stat-mini-fill" :style="{width: pct(g.current_value, g.target_value)+'%'}"></div>
+              </div>
+              <div style="margin-top:8px;display:flex;gap:6px">
                 <button type="button" class="edit-btn edit-btn-sm" @click="openGoalEditGoal(g)">✏️</button>
                 <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="deleteGoalAction(g)">🗑</button>
               </div>
             </div>
-            <p v-if="g.description" class="goal-text">{{ g.description }}</p>
-            <p class="goal-text">Прогресс: {{ goalProgressLabel(g) }}</p>
-            <div v-if="g.target_value" class="progress-mini goal-progress">
-              <div class="progress-mini-fill" :style="{width: pct(g.current_value, g.target_value)+'%'}"></div>
-            </div>
+            <button type="button" class="btn-new-goal" @click="openGoalAdd">+ Новая цель</button>
           </div>
         </section>
 
       </main>
 
-      <nav class="bottom-nav-cr">
-        <button type="button" class="nav-cr-side" :class="{active: tab==='quests'}" @click="switchTab('quests')"><span class="ico">⚔️</span>Квесты</button>
-        <button type="button" class="nav-cr-side" :class="{active: tab==='stats'}" @click="switchTab('stats')"><span class="ico">📊</span>Статы</button>
-        <button type="button" class="nav-cr-center" :class="{active: tab==='home'}" @click="switchTab('home')"><span class="ico">🏠</span>Главная</button>
-        <button type="button" class="nav-cr-side" :class="{active: tab==='habits'}" @click="switchTab('habits')"><span class="ico">🌱</span>Привычки</button>
-        <button type="button" class="nav-cr-side" :class="{active: tab==='goals'}" @click="switchTab('goals')"><span class="ico">🎯</span>Цели</button>
+      <nav v-if="!showOnboarding" class="bottom-nav-v7">
+        <button type="button" class="nav-v7-item" :class="{active: tab==='home'}" @click="switchTab('home')">
+          <span class="nav-ico">🏰</span><span class="nav-label">Главная</span>
+        </button>
+        <button type="button" class="nav-v7-item" :class="{active: tab==='quests'}" @click="switchTab('quests')">
+          <span class="nav-ico">⚔️</span><span class="nav-label">Квесты</span>
+        </button>
+        <button type="button" class="nav-v7-item" :class="{active: tab==='stats'}" @click="switchTab('stats')">
+          <span class="nav-ico">📊</span><span class="nav-label">Статы</span>
+        </button>
+        <button type="button" class="nav-v7-item" :class="{active: tab==='clan'}" @click="switchTab('clan')">
+          <span class="nav-ico">🛡️</span><span class="nav-label">Клан</span>
+        </button>
+        <button type="button" class="nav-v7-item" :class="{active: tab==='profile'}" @click="switchTab('profile')">
+          <span class="nav-ico">👑</span><span class="nav-label">Профиль</span>
+        </button>
       </nav>
       <!-- Work on quest / Complete -->
       <div v-if="showReflect" class="modal-overlay" @click.self="showReflect=false">
@@ -2127,19 +2315,17 @@ createApp({
       </div>
 
       <!-- Chest loot reveal -->
-      <div v-if="showChestLoot && chestLoot" class="modal-overlay" @click.self="showChestLoot=false">
-        <div class="modal chest-loot-modal">
-          <h3>{{ chestLoot.title }}</h3>
-          <div class="chest-loot-shake">📦</div>
-          <ul class="chest-loot-list">
-            <li v-for="(item, idx) in (chestLoot.loot?.items || [])" :key="idx">
-              {{ item.label }}
-              <span v-if="item.text" class="chest-loot-tip">{{ item.text }}</span>
-            </li>
-          </ul>
-          <div class="modal-actions">
-            <button type="button" class="btn btn-primary" @click="showChestLoot=false">Забрать!</button>
+      <div v-if="showChestLoot && chestLoot" class="modal-overlay chest-reward-overlay" @click.self="showChestLoot=false">
+        <div class="modal chest-reward-modal">
+          <h3 style="font-size:1.2rem;font-weight:900">Награда!</h3>
+          <div class="chest-reward-visual">📦</div>
+          <div class="chest-reward-list">
+            <div v-for="(item, idx) in (chestLoot.loot?.items || [])" :key="idx" class="chest-reward-item">
+              <span class="ico">{{ item.type === 'coins' ? '🪙' : item.type === 'xp' ? '⭐' : '🎁' }}</span>
+              <span class="val">+{{ item.amount || item.value }}</span>
+            </div>
           </div>
+          <button type="button" class="btn-excellent" @click="showChestLoot=false">ОТЛИЧНО!</button>
         </div>
       </div>
 
