@@ -203,6 +203,59 @@ createApp({
       return groups;
     });
 
+    const questDayBlocks = computed(() => {
+      const blocks = [];
+
+      const habit = habitQuests.value;
+      if (habit.length) {
+        blocks.push({
+          id: 'habits',
+          icon: '🌱',
+          title: 'Мои привычки',
+          subtitle: 'Ежедневные привычки',
+          quests: habit,
+          done: habit.filter((q) => q.status === 'done').length,
+          total: habit.length,
+        });
+      }
+
+      const game = gameHabitQuests.value;
+      if (game.length) {
+        blocks.push({
+          id: 'game-habits',
+          icon: '🎲',
+          title: 'От игры',
+          subtitle: 'Новые привычки каждый день',
+          quests: game,
+          done: game.filter((q) => q.status === 'done').length,
+          total: game.length,
+        });
+      }
+
+      const byStat = questsByStat.value;
+      const orderedKeys = [...(statKeys.value || [])];
+      Object.keys(byStat).forEach((k) => {
+        if (!orderedKeys.includes(k)) orderedKeys.push(k);
+      });
+
+      orderedKeys.forEach((key) => {
+        const qs = byStat[key];
+        if (!qs?.length) return;
+        blocks.push({
+          id: `stat-${key}`,
+          icon: statIcon(key),
+          title: statLabelPlain(key),
+          subtitle: null,
+          statKey: key,
+          quests: qs,
+          done: qs.filter((q) => q.status === 'done').length,
+          total: qs.length,
+        });
+      });
+
+      return blocks;
+    });
+
     const habitQuests = computed(() =>
       (questPack.value?.quests || []).filter((q) => q.source === 'habit')
     );
@@ -1547,7 +1600,7 @@ createApp({
       leagueData,
       clanData, clanForm, shopThemes, subscription, shopCourses, referralInfo, isAdmin,
       adminDashboard, adminPlayers, adminEditForm, editingAdminPlayerId,
-      habitQuests, gameHabitQuests, regularQuests, allQuestsToday,
+      habitQuests, gameHabitQuests, regularQuests, allQuestsToday, questDayBlocks,
       questViewTab, goalsViewTab, showGameHud, hudInitial, questCoins, questGems,
       questsDoneToday, questsTotalToday, questDailyPct, chestSlotsUi, victoryRequired,
       profileMenuDays, profileQuestsDone, navQuestBadge, statBarGradient,
@@ -1759,23 +1812,38 @@ createApp({
           <template v-else>
             <div v-if="questPack.main_mission" class="quest-mission">🔥 {{ questPack.main_mission }}</div>
 
-            <div
-              v-for="q in allQuestsToday"
-              :key="q.id"
-              class="quest-card-v7"
-              :class="{ done: q.status==='done', failed: q.status==='failed' }"
-              @click="q.status==='pending' && openQuest(q)"
-            >
-              <div class="quest-ico" :class="statIconClass(q.stat_key)">{{ statIcon(q.stat_key) }}</div>
-              <div class="quest-card-body">
-                <div class="quest-card-title">{{ q.title }}</div>
-                <div class="quest-card-meta">
-                  <span class="tag">{{ statLabelPlain(q.stat_key) }}</span>
-                  <span v-if="q.status==='done'" class="xp-gain">+{{ q.xp_reward }} XP</span>
+            <div v-for="block in questDayBlocks" :key="block.id" class="quest-block">
+              <div class="quest-block-head" :class="'quest-block-head-' + block.id.replace('stat-', '')">
+                <span class="quest-block-ico">{{ block.icon }}</span>
+                <div class="quest-block-info">
+                  <div class="quest-block-title">{{ block.title }}</div>
+                  <div v-if="block.subtitle" class="quest-block-sub">{{ block.subtitle }}</div>
                 </div>
+                <span class="quest-block-count" :class="{ complete: block.done === block.total && block.total > 0 }">
+                  {{ block.done }}/{{ block.total }}
+                </span>
               </div>
-              <div v-if="q.status==='done'" class="quest-done-check">✓</div>
-              <button v-else-if="q.status==='pending'" type="button" class="btn-complete" @click.stop="openQuest(q)">Выполнить</button>
+
+              <div
+                v-for="q in block.quests"
+                :key="q.id"
+                class="quest-card-v7"
+                :class="{ done: q.status==='done', failed: q.status==='failed' }"
+                @click="q.status==='pending' && openQuest(q)"
+              >
+                <div class="quest-ico" :class="statIconClass(q.stat_key)">{{ statIcon(q.stat_key) }}</div>
+                <div class="quest-card-body">
+                  <div class="quest-card-title">{{ q.title }}</div>
+                  <div class="quest-card-meta">
+                    <span v-if="block.id === 'game-habits'" class="tag tag-game">ИГРА</span>
+                    <span v-else-if="block.id !== 'habits'" class="tag">{{ statLabelPlain(q.stat_key) }}</span>
+                    <span v-if="q.status==='done'" class="xp-gain">+{{ q.xp_reward }} XP</span>
+                    <span v-else class="xp-pending">+{{ q.xp_reward }} XP</span>
+                  </div>
+                </div>
+                <div v-if="q.status==='done'" class="quest-done-check">✓</div>
+                <button v-else-if="q.status==='pending'" type="button" class="btn-complete" @click.stop="openQuest(q)">Выполнить</button>
+              </div>
             </div>
 
             <div class="quest-actions-row" style="margin-top:12px">

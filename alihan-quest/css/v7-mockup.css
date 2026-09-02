@@ -1092,6 +1092,79 @@ body {
   font-weight: 800;
   margin-left: 4px;
 }
+.quest-card-v7 .xp-pending {
+  color: var(--gold);
+  font-weight: 700;
+  margin-left: 4px;
+  opacity: 0.85;
+}
+.tag-game {
+  background: rgba(155, 89, 182, 0.2) !important;
+  color: #c39bd3 !important;
+}
+
+/* ——— Quest blocks ——— */
+.quest-block {
+  margin-bottom: 18px;
+}
+.quest-block-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+}
+.quest-block-head-habits { border-left-color: var(--green); }
+.quest-block-head-game-habits { border-left-color: #9b59b6; }
+.quest-block-head-discipline { border-left-color: #2ecc71; }
+.quest-block-head-capital { border-left-color: #f5a623; }
+.quest-block-head-entrepreneur { border-left-color: #9b59b6; }
+.quest-block-head-mastery { border-left-color: #f1c40f; }
+.quest-block-head-mabibip { border-left-color: #3498db; }
+.quest-block-head-media { border-left-color: #e74c3c; }
+.quest-block-head-form { border-left-color: #1abc9c; }
+.quest-block-head-network { border-left-color: #3498db; }
+.quest-block-ico {
+  font-size: 1.35rem;
+  flex-shrink: 0;
+  width: 32px;
+  text-align: center;
+}
+.quest-block-info {
+  flex: 1;
+  min-width: 0;
+}
+.quest-block-title {
+  font-weight: 800;
+  font-size: 0.92rem;
+  line-height: 1.2;
+}
+.quest-block-sub {
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.quest-block-count {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--muted);
+  padding: 4px 8px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.25);
+}
+.quest-block-count.complete {
+  color: var(--green);
+  background: rgba(76, 217, 100, 0.12);
+}
+.quest-block .quest-card-v7 {
+  margin-left: 4px;
+  margin-right: 0;
+}
 
 /* ——— Stats top card ——— */
 .stats-top-card {
