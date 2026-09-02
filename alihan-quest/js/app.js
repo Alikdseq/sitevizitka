@@ -2061,7 +2061,7 @@ createApp({
         </section>
 
         <!-- STATS -->
-        <section v-else-if="tab==='stats'" class="screen">
+        <section v-else-if="tab==='stats'" class="screen screen-stats">
           <h1 class="screen-title-center">Статы</h1>
 
           <div class="stats-top-card">
@@ -2080,7 +2080,7 @@ createApp({
             <button type="button" class="edit-btn" @click="openStatAdd">+</button>
           </div>
 
-          <div class="stats-grid-v7">
+          <div class="stats-list-v7">
             <div v-for="key in statKeys" :key="key" class="stat-card-v7" @click="openStatCard(key)">
               <div class="stat-card-v7-head">
                 <div class="quest-ico" :class="statIconClass(key)">{{ statIcon(key) }}</div>
@@ -2088,8 +2088,11 @@ createApp({
                   <div class="stat-card-v7-name">{{ statLabelPlain(key) }}</div>
                   <div class="stat-card-v7-lvl">{{ displayProfile.stats_levels?.[key] ?? 0 }} ур.</div>
                 </div>
+                <div class="stat-card-v7-xp-inline">
+                  {{ fmtNum(statProgress(key).current) }} / {{ fmtNum(statProgress(key).needed) }}
+                </div>
               </div>
-              <div class="stat-mini-bar">
+              <div class="stat-mini-bar stat-card-bar">
                 <div
                   class="stat-mini-fill"
                   :style="{
@@ -2097,9 +2100,6 @@ createApp({
                     background: statBarGradient(key)
                   }"
                 ></div>
-              </div>
-              <div class="stat-card-xp">
-                {{ fmtNum(statProgress(key).current) }} / {{ fmtNum(statProgress(key).needed) }}
               </div>
             </div>
           </div>
