@@ -435,6 +435,14 @@ window.QuestAPI = {
     return await apiFetch('/gamification/league/');
   },
 
+  async getLeagueLadder() {
+    return await apiFetch('/gamification/league/ladder/');
+  },
+
+  async deactivateMe() {
+    return await apiFetch('/me/', { method: 'DELETE' });
+  },
+
   async getGrowthPaths() {
     return await apiFetch('/gamification/growth/paths/');
   },

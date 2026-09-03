@@ -155,6 +155,8 @@ createApp({
     const analyticsData = ref(null);
 
     const leagueData = ref(null);
+    const leagueLadder = ref(null);
+    const showLeagueLadder = ref(false);
 
     const clanData = ref(null);
     const clanForm = ref({ name: '', invite_code: '', stat_focus: 'discipline' });
@@ -407,10 +409,13 @@ createApp({
       shareReferralLink();
     }
 
-    function closeMiniApp() {
+    async function closeMiniApp() {
+      try {
+        await QuestAPI.deactivateMe();
+      } catch (_) { /* offline / already gone */ }
       const tg = window.Telegram?.WebApp;
       if (tg?.close) tg.close();
-      else showToast('Закрой Mini App вручную');
+      else showToast('Профиль скрыт. При входе прогресс восстановится.');
     }
 
     const pendingCount = computed(() =>
@@ -601,6 +606,43 @@ createApp({
       }
     }
 
+    async function openLeagueLadder() {
+      showLeagueLadder.value = true;
+      try {
+        leagueLadder.value = await QuestAPI.getLeagueLadder();
+      } catch {
+        leagueLadder.value = null;
+        showToast('Не удалось загрузить таблицу лиг');
+      }
+    }
+
+    function leagueTierIcon(tier) {
+      const map = {
+        bronze: 'league-bronze',
+        silver: 'league-silver',
+        gold: 'league-gold',
+        ruby: 'league-platinum',
+        emerald: 'league-diamond',
+        diamond: 'league-master',
+        architect: 'league-legendary',
+      };
+      return map[tier] || tier?.icon || 'league-bronze';
+    }
+
+    const LEAGUE_TITLES = {
+      bronze: 'Бронза',
+      silver: 'Серебро',
+      gold: 'Золото',
+      ruby: 'Рубин',
+      emerald: 'Изумруд',
+      diamond: 'Алмаз',
+      architect: 'Архитектор',
+    };
+
+    function leagueTierTitle(tier) {
+      return LEAGUE_TITLES[tier] || tier || '—';
+    }
+
     async function loadClan() {
       try {
         const data = await QuestAPI.getClan();
@@ -788,6 +830,7 @@ createApp({
     }
 
     function switchTab(name) {
+      if (tab.value === 'league' && name !== 'league') showLeagueLadder.value = false;
       tab.value = name;
     }
 
@@ -1627,7 +1670,7 @@ createApp({
       playerHabits, gameHabits, showHabitSheet, habitForm, editingHabitId,
       showStatSheet, statSheetForm, statSheetOriginalKey,
       analyticsData,
-      leagueData,
+      leagueData, leagueLadder, showLeagueLadder,
       clanData, clanForm, shopThemes, subscription, shopCourses, referralInfo, isAdmin,
       adminDashboard, adminPlayers, adminEditForm, editingAdminPlayerId,
       habitQuests, gameHabitQuests, regularQuests, allQuestsToday, questDayBlocks,
@@ -1647,7 +1690,7 @@ createApp({
       QuestAPI,
       fmtMoney, fmtNum, fmtDueTime, pct, showToast, switchTab, refresh,
       playCelebration, openReadyChest, claimMorning, openEveningChestModal, submitEveningChest,
-      loadLeague, loadJournalInsights, loadHabits,
+      loadLeague, openLeagueLadder, leagueTierIcon, leagueTierTitle, loadJournalInsights, loadHabits,
       initOnboarding, wizardBack, wizardPrimaryAction, skipWizardHabits,
       startWizardAddStat, removeWizardStat, startWizardAddHabit,
       openStatCard, saveStatSheet, deleteStatSheet, openStatAdd, saveNewStatSheet,
@@ -1781,18 +1824,6 @@ createApp({
                 <span class="side-btn-label">Магазин</span>
               </div>
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn" @click="switchTab('quests')">
-                  <img class="qi qi-side" :src="iconUrl('side-events')" alt="" decoding="async" @error="onImgError">
-                </button>
-                <span class="side-btn-label">События</span>
-              </div>
-              <div class="side-btn-wrap">
-                <button type="button" class="side-btn" @click="switchTab('clan')">
-                  <img class="qi qi-side" :src="iconUrl('nav-clan')" alt="" decoding="async" @error="onImgError">
-                </button>
-                <span class="side-btn-label">Клан</span>
-              </div>
-              <div class="side-btn-wrap">
                 <button type="button" class="side-btn" @click="shareFriends">
                   <img class="qi qi-side" :src="iconUrl('side-friends')" alt="" decoding="async" @error="onImgError">
                 </button>
@@ -1892,7 +1923,7 @@ createApp({
                 :class="{ done: q.status==='done', failed: q.status==='failed' }"
                 @click="q.status==='pending' && openQuest(q)"
               >
-                <div class="quest-ico" :class="statIconClass(q.stat_key)">
+                <div class="quest-ico quest-ico-bare">
                   <img class="qi qi-quest" :src="statIconUrl(q.stat_key)" alt="" decoding="async" @error="onImgError">
                 </div>
                 <div class="quest-card-body">
@@ -1918,14 +1949,60 @@ createApp({
 
         <!-- LEAGUE -->
         <section v-else-if="tab==='league'" class="screen">
-          <h1 class="screen-title-center">Лига</h1>
-          <div v-if="!leagueData" class="empty-state"><p>Загрузка...</p></div>
+          <h1 class="screen-title-center">{{ showLeagueLadder ? 'Таблица лиг' : 'Лига' }}</h1>
+
+          <template v-if="showLeagueLadder">
+            <button type="button" class="btn btn-secondary btn-sm" style="margin-bottom:12px" @click="showLeagueLadder=false">← К недельной лиге</button>
+            <div v-if="!leagueLadder" class="empty-state"><p>Загрузка...</p></div>
+            <template v-else>
+              <div class="ladder-player-summary">
+                <div class="ladder-sum-item">Ур. <b>{{ leagueLadder.player_level }}</b></div>
+                <div class="ladder-sum-item">XP <b>{{ fmtNum(leagueLadder.player_total_xp) }}</b></div>
+                <div class="ladder-sum-item">Цели <b>{{ leagueLadder.player_goals_pct }}%</b></div>
+              </div>
+              <p class="ladder-hint">Самая сильная лига сверху. Для повышения нужны уровень, XP и прогресс по целям.</p>
+              <div class="league-ladder">
+                <div
+                  v-for="t in leagueLadder.tiers"
+                  :key="t.key"
+                  class="ladder-tier"
+                  :class="{ current: t.is_current, locked: !t.unlocked, unlocked: t.unlocked }"
+                >
+                  <div class="ladder-tier-head">
+                    <img class="qi qi-league-lg" :src="iconUrl(t.icon || leagueTierIcon(t.key))" alt="" decoding="async" @error="onImgError">
+                    <div class="ladder-tier-titles">
+                      <div class="ladder-tier-name">{{ t.title }}</div>
+                      <div v-if="t.is_current" class="ladder-tier-badge">Твоя лига</div>
+                      <div v-else-if="t.unlocked" class="ladder-tier-badge ok">Открыта</div>
+                      <div v-else class="ladder-tier-badge lock">Закрыта</div>
+                    </div>
+                  </div>
+                  <div class="ladder-reqs">
+                    <div class="ladder-req" :class="{ ok: t.progress?.level_ok }">
+                      <span class="ladder-req-label">Уровень</span>
+                      <span class="ladder-req-val">{{ t.progress?.level ?? '—' }} / {{ t.min_level }}</span>
+                    </div>
+                    <div class="ladder-req" :class="{ ok: t.progress?.xp_ok }">
+                      <span class="ladder-req-label">XP</span>
+                      <span class="ladder-req-val">{{ fmtNum(t.progress?.total_xp) }} / {{ fmtNum(t.min_total_xp) }}</span>
+                    </div>
+                    <div class="ladder-req" :class="{ ok: t.progress?.goals_ok }">
+                      <span class="ladder-req-label">Цели</span>
+                      <span class="ladder-req-val">{{ t.progress?.goals_pct ?? 0 }}% / {{ t.min_goals_pct }}%</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </template>
+          </template>
+
+          <div v-else-if="!leagueData" class="empty-state"><p>Загрузка...</p></div>
           <template v-else>
             <div class="league-current-card">
-              <img class="qi qi-league" :src="iconUrl('league-gold')" alt="" decoding="async" @error="onImgError">
+              <img class="qi qi-league" :src="iconUrl(leagueTierIcon(leagueData.tier || leagueData.season_tier))" alt="" decoding="async" @error="onImgError">
               <div class="league-current-info">
                 <div class="league-current-label">Текущая лига</div>
-                <div class="league-current-name">{{ leagueData.tier }}</div>
+                <div class="league-current-name">{{ leagueTierTitle(leagueData.season_tier || leagueData.tier) }}</div>
                 <div class="league-current-trophies">🏆 {{ fmtNum(leagueData.weekly_xp) }}</div>
               </div>
             </div>
@@ -1945,7 +2022,7 @@ createApp({
               </div>
             </div>
 
-            <button type="button" class="btn-league-table" @click="loadLeague">Таблица лиг</button>
+            <button type="button" class="btn-league-table" @click="openLeagueLadder">Таблица лиг</button>
           </template>
         </section>
 
@@ -2146,7 +2223,7 @@ createApp({
           <div class="stats-list-v7">
             <div v-for="key in statKeys" :key="key" class="stat-card-v7" @click="openStatCard(key)">
               <div class="stat-card-v7-head">
-                <div class="quest-ico" :class="statIconClass(key)">
+                <div class="quest-ico quest-ico-bare">
                   <img class="qi qi-quest" :src="statIconUrl(key)" alt="" decoding="async" @error="onImgError">
                 </div>
                 <div class="stat-card-v7-title-wrap">
@@ -2233,9 +2310,9 @@ createApp({
 
         <!-- JOURNAL -->
         <section v-else-if="tab==='journal'" class="screen">
-          <div class="section-head">📅 Журнал</div>
+          <h1 class="screen-title-center">История</h1>
 
-          <div v-if="analyticsData?.insights?.length" class="insights-block">
+          <div v-if="analyticsData?.insights?.length" class="insights-block journal-insights">
             <div class="section-head progress-subhead">✨ Замеченный прогресс</div>
             <div
               v-for="ins in analyticsData.insights"
@@ -2248,29 +2325,31 @@ createApp({
             </div>
           </div>
           <div v-else-if="analyticsData" class="empty-state insight-empty">
-            <p>📊 Выполняй квесты с числами в заметках — например «300 приседаний». Программа сама заметит рост.</p>
+            <p>Выполняй квесты с числами в заметках — программа заметит рост.</p>
           </div>
 
-          <div class="section-head progress-subhead" style="margin-top:16px">📅 Календарь</div>
-          <div class="cal-nav">
-            <button type="button" class="edit-btn" @click="prevMonth">←</button>
-            <span class="cal-nav-title">{{ calendarTitle }}</span>
-            <button type="button" class="edit-btn" @click="nextMonth">→</button>
+          <div class="journal-cal-card">
+            <div class="cal-nav">
+              <button type="button" class="edit-btn" @click="prevMonth">←</button>
+              <span class="cal-nav-title">{{ calendarTitle }}</span>
+              <button type="button" class="edit-btn" @click="nextMonth">→</button>
+            </div>
+            <div class="cal-weekdays">
+              <span v-for="d in ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']" :key="d">{{ d }}</span>
+            </div>
+            <div class="cal-grid">
+              <template v-for="cell in calendarCells" :key="cell.key">
+                <div v-if="cell.empty" class="cal-day cal-day-empty"></div>
+                <button v-else type="button"
+                        :class="calDayClass(cell)"
+                        @click="selectCalendarDay(cell)">
+                  <span class="cal-day-num">{{ cell.day }}</span>
+                  <span v-if="cell.data?.total" class="cal-day-badge">{{ cell.data.done }}/{{ cell.data.total }}</span>
+                </button>
+              </template>
+            </div>
           </div>
-          <div class="cal-weekdays">
-            <span v-for="d in ['Пн','Вт','Ср','Чт','Пт','Сб','Вс']" :key="d">{{ d }}</span>
-          </div>
-          <div class="cal-grid">
-            <template v-for="cell in calendarCells" :key="cell.key">
-              <div v-if="cell.empty" class="cal-day cal-day-empty"></div>
-              <button v-else type="button"
-                      :class="calDayClass(cell)"
-                      @click="selectCalendarDay(cell)">
-                <span class="cal-day-num">{{ cell.day }}</span>
-                <span v-if="cell.data?.total" class="cal-day-badge">{{ cell.data.done }}/{{ cell.data.total }}</span>
-              </button>
-            </template>
-          </div>
+
           <div v-if="selectedDate" class="journal-day-panel">
             <div class="section-head-row">
               <div class="section-head">📋 {{ selectedDate }}</div>
@@ -2282,18 +2361,32 @@ createApp({
             <div v-if="!journalQuests.quests.length" class="empty-state">
               <p>Нет квестов на этот день</p>
             </div>
-            <div v-for="q in journalQuests.quests" :key="q.id"
-                 class="quest-item"
-                 :class="{done: q.status==='done', failed: q.status==='failed'}"
-                 @click="openJournalQuest(q)">
-              <div class="quest-check">{{ q.status==='done' ? '✓' : q.status==='failed' ? '✗' : '' }}</div>
-              <div class="quest-body">
-                <div class="quest-title">{{ q.title }}<span v-if="q.progress_notes" class="quest-has-notes"> 📝</span></div>
-                <div class="quest-xp">+{{ q.xp_reward }} XP · {{ statLabel(q.stat_key) }}<span v-if="q.due_time" class="quest-due"> · до {{ fmtDueTime(q.due_time) }}</span></div>
+            <div
+              v-for="q in journalQuests.quests"
+              :key="q.id"
+              class="quest-card-v7"
+              :class="{ done: q.status==='done', failed: q.status==='failed' }"
+              @click="openJournalQuest(q)"
+            >
+              <div class="quest-ico quest-ico-bare">
+                <img class="qi qi-quest" :src="statIconUrl(q.stat_key)" alt="" decoding="async" @error="onImgError">
               </div>
-              <div v-if="q.status==='pending'" class="quest-actions" @click.stop>
-                <button type="button" class="edit-btn edit-btn-sm edit-btn-danger" @click="removeQuest(q, $event, 'journal')">🗑</button>
+              <div class="quest-card-body">
+                <div class="quest-card-title">{{ q.title }}<span v-if="q.progress_notes"> 📝</span></div>
+                <div class="quest-card-meta">
+                  <span class="tag">{{ statLabelPlain(q.stat_key) }}</span>
+                  <span v-if="q.status==='done'" class="xp-gain">+{{ q.xp_reward }} XP</span>
+                  <span v-else class="xp-pending">+{{ q.xp_reward }} XP</span>
+                  <span v-if="q.due_time" class="xp-pending"> · до {{ fmtDueTime(q.due_time) }}</span>
+                </div>
               </div>
+              <div v-if="q.status==='done'" class="quest-done-check">✓</div>
+              <button
+                v-else-if="q.status==='pending'"
+                type="button"
+                class="edit-btn edit-btn-sm edit-btn-danger"
+                @click.stop="removeQuest(q, $event, 'journal')"
+              >🗑</button>
             </div>
           </div>
         </section>
