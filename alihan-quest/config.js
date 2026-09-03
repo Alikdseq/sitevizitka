@@ -2,6 +2,6 @@
 window.QUEST_CONFIG = {
   API_BASE: 'https://necessarily-listing-beads-draw.trycloudflare.com',
   DEMO_TOKEN: 'demo-alihan-quest',
-  CACHE_VERSION: 55,
+  CACHE_VERSION: 56,
 };
 

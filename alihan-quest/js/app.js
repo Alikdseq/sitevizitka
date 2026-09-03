@@ -210,6 +210,7 @@ createApp({
       if (habit.length) {
         blocks.push({
           id: 'habits',
+          iconKey: 'res-stamina',
           icon: '🌱',
           title: 'Мои привычки',
           subtitle: 'Ежедневные привычки',
@@ -223,6 +224,7 @@ createApp({
       if (game.length) {
         blocks.push({
           id: 'game-habits',
+          iconKey: 'ico-gift',
           icon: '🎲',
           title: 'От игры',
           subtitle: 'Новые привычки каждый день',
@@ -243,6 +245,7 @@ createApp({
         if (!qs?.length) return;
         blocks.push({
           id: `stat-${key}`,
+          iconKey: null,
           icon: statIcon(key),
           title: statLabelPlain(key),
           subtitle: null,
@@ -311,29 +314,29 @@ createApp({
       const goldReady = ready[0];
       slots.push({
         type: 'gold',
-        icon: '🏆',
-        title: 'Золотой сундук',
+        iconKey: 'chest-ark',
+        title: 'Сундук Арка',
         label: goldReady ? 'ОТКРЫТЬ' : `${victoryDone}/${victoryReq}`,
         ready: Boolean(goldReady),
         chest: goldReady,
       });
       slots.push({
         type: 'silver',
-        icon: '📦',
-        title: 'Серебряный сундук',
+        iconKey: 'chest-strazh',
+        title: 'Сундук Стража',
         label: '3ч 24м',
         timer: true,
       });
       slots.push({
         type: 'wood',
-        icon: '📦',
-        title: 'Деревянный сундук',
+        iconKey: 'chest-strelok',
+        title: 'Сундук Стрелка',
         label: '1ч 15м',
         timer: true,
       });
       slots.push({
         type: 'locked',
-        icon: '🔒',
+        iconKey: '',
         title: 'Слот сундука',
         label: '',
         locked: true,
@@ -378,6 +381,18 @@ createApp({
 
     function statIcon(key) {
       return STAT_ICONS[key] || '⭐';
+    }
+
+    function iconUrl(key) {
+      return window.QuestIcons?.url?.(key) || '';
+    }
+
+    function statIconUrl(key) {
+      return window.QuestIcons?.statKey?.(key) || '';
+    }
+
+    function onImgError(e) {
+      if (e?.target) e.target.style.visibility = 'hidden';
     }
 
     function onChestSlotClick(slot) {
@@ -1577,13 +1592,28 @@ createApp({
       document.addEventListener('visibilitychange', () => {
         if (document.visibilityState === 'visible') refreshDebounced(300);
       });
+      const iconsReady = window.QuestIcons?.preloadCritical?.() || Promise.resolve();
       try {
-        await tryApplyReferralFromTelegram();
-        await refresh();
+        await Promise.all([
+          iconsReady,
+          (async () => {
+            await tryApplyReferralFromTelegram();
+            await refresh();
+          })(),
+        ]);
       } catch {
         profile.value = QuestAPI.cachedProfile();
         questPack.value = QuestAPI.cachedQuests();
         apiOnline.value = false;
+      }
+      // secondary icons in background — не блокирует UI
+      if (window.QuestIcons?.preload) {
+        setTimeout(() => {
+          window.QuestIcons.preload([
+            'chest-khaos', 'arena-goal', 'reward-trophy', 'reward-summit',
+            'char-male-portrait', 'league-champion', 'boost-xp', 'misc-vip',
+          ]);
+        }, 800);
       }
     });
 
@@ -1604,7 +1634,7 @@ createApp({
       questViewTab, goalsViewTab, showGameHud, hudInitial, questCoins, questGems,
       questsDoneToday, questsTotalToday, questDailyPct, chestSlotsUi, victoryRequired,
       profileMenuDays, profileQuestsDone, navQuestBadge, statBarGradient,
-      statIconClass, statLabelPlain, statIcon,
+      statIconClass, statLabelPlain, statIcon, iconUrl, statIconUrl, onImgError,
       onChestSlotClick, shareFriends, closeMiniApp,
       chestSummary, victoryProgressPct, readyChests,
       activeQuest, detailQuest, importJson, reflection, progressNotes,
@@ -1686,9 +1716,13 @@ createApp({
           </div>
         </div>
         <div class="hud-currencies">
-          <div class="hud-pill gold"><span class="ico">🪙</span>{{ fmtNum(questCoins) }}</div>
+          <div class="hud-pill gold">
+            <img class="qi qi-hud" :src="iconUrl('coin-gold')" alt="" decoding="async" @error="onImgError">
+            <span>{{ fmtNum(questCoins) }}</span>
+          </div>
           <div class="hud-pill gem">
-            <span class="ico">💎</span>{{ fmtNum(questGems) }}
+            <img class="qi qi-hud" :src="iconUrl('coin-gem')" alt="" decoding="async" @error="onImgError">
+            <span>{{ fmtNum(questGems) }}</span>
             <button type="button" class="hud-plus" @click="switchTab('shop')">+</button>
           </div>
         </div>
@@ -1705,17 +1739,21 @@ createApp({
             <div class="home-side-col home-side-left">
               <div class="side-btn-wrap">
                 <button type="button" class="side-btn side-chests" @click="onChestSlotClick(chestSlotsUi[0])">
-                  📦
+                  <img class="qi qi-side" :src="iconUrl('side-chests')" alt="" decoding="async" @error="onImgError">
                   <span v-if="readyChests.length" class="side-badge">{{ readyChests.length }}</span>
                 </button>
                 <span class="side-btn-label">Сундуки</span>
               </div>
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn side-goals" @click="switchTab('goals')">🎯</button>
+                <button type="button" class="side-btn side-goals" @click="switchTab('goals')">
+                  <img class="qi qi-side" :src="iconUrl('side-goals')" alt="" decoding="async" @error="onImgError">
+                </button>
                 <span class="side-btn-label">Цели</span>
               </div>
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn side-league" @click="switchTab('league')">🥇</button>
+                <button type="button" class="side-btn side-league" @click="switchTab('league')">
+                  <img class="qi qi-side" :src="iconUrl('league-gold')" alt="" decoding="async" @error="onImgError">
+                </button>
                 <span class="side-btn-label">Лига</span>
               </div>
             </div>
@@ -1729,33 +1767,41 @@ createApp({
                 <div class="level-hex-xp">{{ fmtNum(displayProfile.xp_in_level) }} / {{ fmtNum(displayProfile.xp_needed) }} XP</div>
               </div>
               <div class="arena-scene">
-                <div class="arena-portal"></div>
-                <div class="arena-ruins"></div>
-                <div class="arena-island"></div>
-                <div class="arena-hero"></div>
+                <img class="arena-bg-img" :src="iconUrl('arena-home')" alt="" decoding="async" @error="onImgError">
+                <img class="arena-hero-img" :src="iconUrl('char-male-full')" alt="" decoding="async" @error="onImgError">
                 <button type="button" class="btn-cta-quest arena-cta" @click="switchTab('quests')">В КВЕСТ</button>
               </div>
             </div>
 
             <div class="home-side-col home-side-right">
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn" @click="switchTab('shop')">🛒</button>
+                <button type="button" class="side-btn" @click="switchTab('shop')">
+                  <img class="qi qi-side" :src="iconUrl('side-shop')" alt="" decoding="async" @error="onImgError">
+                </button>
                 <span class="side-btn-label">Магазин</span>
               </div>
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn" @click="switchTab('quests')">🏅</button>
+                <button type="button" class="side-btn" @click="switchTab('quests')">
+                  <img class="qi qi-side" :src="iconUrl('side-events')" alt="" decoding="async" @error="onImgError">
+                </button>
                 <span class="side-btn-label">События</span>
               </div>
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn" @click="switchTab('clan')">🛡️</button>
+                <button type="button" class="side-btn" @click="switchTab('clan')">
+                  <img class="qi qi-side" :src="iconUrl('nav-clan')" alt="" decoding="async" @error="onImgError">
+                </button>
                 <span class="side-btn-label">Клан</span>
               </div>
               <div class="side-btn-wrap">
-                <button type="button" class="side-btn" @click="shareFriends">👥</button>
+                <button type="button" class="side-btn" @click="shareFriends">
+                  <img class="qi qi-side" :src="iconUrl('side-friends')" alt="" decoding="async" @error="onImgError">
+                </button>
                 <span class="side-btn-label">Друзья</span>
               </div>
               <div v-if="isAdmin" class="side-btn-wrap">
-                <button type="button" class="side-btn side-btn-admin" @click="switchTab('admin')">⚙️</button>
+                <button type="button" class="side-btn side-btn-admin" @click="switchTab('admin')">
+                  <img class="qi qi-side" :src="iconUrl('ico-settings')" alt="" decoding="async" @error="onImgError">
+                </button>
               </div>
             </div>
           </div>
@@ -1770,7 +1816,10 @@ createApp({
               :disabled="slot.locked"
               @click="onChestSlotClick(slot)"
             >
-              <span class="chest-slot-icon">{{ slot.icon }}</span>
+              <span class="chest-slot-icon">
+                <img v-if="slot.iconKey" class="qi qi-chest" :src="iconUrl(slot.iconKey)" alt="" decoding="async" @error="onImgError">
+                <span v-else class="chest-slot-lock">🔒</span>
+              </span>
               <span class="chest-slot-title">{{ slot.title }}</span>
               <span v-if="slot.label" class="chest-slot-action" :class="{ open: slot.ready }">{{ slot.label }}</span>
             </button>
@@ -1794,7 +1843,9 @@ createApp({
               <div class="quest-daily-bar wide">
                 <div class="quest-daily-fill" :style="{width: questDailyPct+'%'}"></div>
               </div>
-              <div class="quest-progress-chest">📦</div>
+              <div class="quest-progress-chest">
+                <img class="qi qi-chest-sm" :src="iconUrl('chest-strelok')" alt="" decoding="async" @error="onImgError">
+              </div>
             </div>
             <div class="quest-progress-count">{{ questsDoneToday }} / {{ questsTotalToday || victoryRequired }} квестов</div>
           </div>
@@ -1814,7 +1865,17 @@ createApp({
 
             <div v-for="block in questDayBlocks" :key="block.id" class="quest-block">
               <div class="quest-block-head" :class="'quest-block-head-' + block.id.replace('stat-', '')">
-                <span class="quest-block-ico">{{ block.icon }}</span>
+                <span class="quest-block-ico">
+                  <img
+                    v-if="block.iconKey || block.statKey"
+                    class="qi qi-block"
+                    :src="block.iconKey ? iconUrl(block.iconKey) : statIconUrl(block.statKey)"
+                    alt=""
+                    decoding="async"
+                    @error="onImgError"
+                  >
+                  <template v-else>{{ block.icon }}</template>
+                </span>
                 <div class="quest-block-info">
                   <div class="quest-block-title">{{ block.title }}</div>
                   <div v-if="block.subtitle" class="quest-block-sub">{{ block.subtitle }}</div>
@@ -1831,7 +1892,9 @@ createApp({
                 :class="{ done: q.status==='done', failed: q.status==='failed' }"
                 @click="q.status==='pending' && openQuest(q)"
               >
-                <div class="quest-ico" :class="statIconClass(q.stat_key)">{{ statIcon(q.stat_key) }}</div>
+                <div class="quest-ico" :class="statIconClass(q.stat_key)">
+                  <img class="qi qi-quest" :src="statIconUrl(q.stat_key)" alt="" decoding="async" @error="onImgError">
+                </div>
                 <div class="quest-card-body">
                   <div class="quest-card-title">{{ q.title }}</div>
                   <div class="quest-card-meta">
@@ -1859,7 +1922,7 @@ createApp({
           <div v-if="!leagueData" class="empty-state"><p>Загрузка...</p></div>
           <template v-else>
             <div class="league-current-card">
-              <div class="league-shield-ico">🛡️</div>
+              <img class="qi qi-league" :src="iconUrl('league-gold')" alt="" decoding="async" @error="onImgError">
               <div class="league-current-info">
                 <div class="league-current-label">Текущая лига</div>
                 <div class="league-current-name">{{ leagueData.tier }}</div>
@@ -2083,7 +2146,9 @@ createApp({
           <div class="stats-list-v7">
             <div v-for="key in statKeys" :key="key" class="stat-card-v7" @click="openStatCard(key)">
               <div class="stat-card-v7-head">
-                <div class="quest-ico" :class="statIconClass(key)">{{ statIcon(key) }}</div>
+                <div class="quest-ico" :class="statIconClass(key)">
+                  <img class="qi qi-quest" :src="statIconUrl(key)" alt="" decoding="async" @error="onImgError">
+                </div>
                 <div class="stat-card-v7-title-wrap">
                   <div class="stat-card-v7-name">{{ statLabelPlain(key) }}</div>
                   <div class="stat-card-v7-lvl">{{ displayProfile.stats_levels?.[key] ?? 0 }} ур.</div>
@@ -2110,7 +2175,7 @@ createApp({
           <h1 class="screen-title-center">Профиль</h1>
 
           <div class="profile-card-horizontal">
-            <div class="profile-avatar-lg">{{ hudInitial }}</div>
+            <img class="profile-avatar-img" :src="iconUrl('char-male-portrait')" alt="" decoding="async" @error="onImgError">
             <div class="profile-card-info">
               <div class="profile-name">{{ displayProfile.display_name }}</div>
               <div class="profile-subtitle">{{ displayProfile.title }}</div>
@@ -2143,20 +2208,27 @@ createApp({
 
           <div class="profile-menu">
             <div class="profile-menu-item" @click="switchTab('league')">
-              <span class="profile-menu-ico">🏆</span><span>Достижения</span><span class="profile-menu-chev">›</span>
+              <img class="qi qi-menu" :src="iconUrl('ico-achievements')" alt="" decoding="async" @error="onImgError">
+              <span>Достижения</span><span class="profile-menu-chev">›</span>
             </div>
             <div class="profile-menu-item" @click="switchTab('journal')">
-              <span class="profile-menu-ico">📅</span><span>История</span><span class="profile-menu-chev">›</span>
+              <img class="qi qi-menu" :src="iconUrl('ico-journal')" alt="" decoding="async" @error="onImgError">
+              <span>История</span><span class="profile-menu-chev">›</span>
             </div>
             <div class="profile-menu-item" @click="switchTab('shop')">
-              <span class="profile-menu-ico">⚙️</span><span>Настройки</span><span class="profile-menu-chev">›</span>
+              <img class="qi qi-menu" :src="iconUrl('ico-settings')" alt="" decoding="async" @error="onImgError">
+              <span>Настройки</span><span class="profile-menu-chev">›</span>
             </div>
             <div v-if="isAdmin" class="profile-menu-item" @click="switchTab('admin')">
-              <span class="profile-menu-ico">👑</span><span>Админка</span><span class="profile-menu-chev">›</span>
+              <img class="qi qi-menu" :src="iconUrl('misc-vip')" alt="" decoding="async" @error="onImgError">
+              <span>Админка</span><span class="profile-menu-chev">›</span>
             </div>
           </div>
 
-          <button type="button" class="btn-logout" @click="closeMiniApp">Выйти из игры</button>
+          <button type="button" class="btn-logout" @click="closeMiniApp">
+            <img class="qi qi-menu" :src="iconUrl('ico-exit')" alt="" decoding="async" @error="onImgError">
+            <span>Выйти из игры</span>
+          </button>
         </section>
 
         <!-- JOURNAL -->
@@ -2266,23 +2338,27 @@ createApp({
 
       <nav v-if="!showOnboarding" class="bottom-nav-v7">
         <button type="button" class="nav-v7-item" :class="{active: tab==='home'}" @click="switchTab('home')">
-          <span class="nav-ico">🏰</span><span class="nav-label">Главная</span>
+          <img class="qi qi-nav" :src="iconUrl('nav-home')" alt="" decoding="async" @error="onImgError">
+          <span class="nav-label">Главная</span>
         </button>
         <button type="button" class="nav-v7-item" :class="{active: tab==='quests'}" @click="switchTab('quests')">
           <span class="nav-ico-wrap">
-            <span class="nav-ico">📜</span>
+            <img class="qi qi-nav" :src="iconUrl('nav-quests')" alt="" decoding="async" @error="onImgError">
             <span v-if="navQuestBadge" class="nav-badge">{{ navQuestBadge }}</span>
           </span>
           <span class="nav-label">Квесты</span>
         </button>
         <button type="button" class="nav-v7-item" :class="{active: tab==='stats'}" @click="switchTab('stats')">
-          <span class="nav-ico">📊</span><span class="nav-label">Статы</span>
+          <img class="qi qi-nav" :src="iconUrl('nav-stats')" alt="" decoding="async" @error="onImgError">
+          <span class="nav-label">Статы</span>
         </button>
         <button type="button" class="nav-v7-item" :class="{active: tab==='clan'}" @click="switchTab('clan')">
-          <span class="nav-ico">🛡️</span><span class="nav-label">Клан</span>
+          <img class="qi qi-nav" :src="iconUrl('nav-clan')" alt="" decoding="async" @error="onImgError">
+          <span class="nav-label">Клан</span>
         </button>
         <button type="button" class="nav-v7-item" :class="{active: tab==='profile'}" @click="switchTab('profile')">
-          <span class="nav-ico">👤</span><span class="nav-label">Профиль</span>
+          <img class="qi qi-nav" :src="iconUrl('nav-profile')" alt="" decoding="async" @error="onImgError">
+          <span class="nav-label">Профиль</span>
         </button>
       </nav>
       <!-- Work on quest / Complete -->
@@ -2472,11 +2548,19 @@ createApp({
         <div class="modal chest-reward-modal">
           <button type="button" class="chest-modal-close" @click="showChestLoot=false">×</button>
           <h3 class="chest-modal-title">{{ chestLoot.title || 'Золотой сундук' }}</h3>
-          <div class="chest-reward-visual chest-glow">📦</div>
+          <div class="chest-reward-visual chest-glow">
+            <img class="qi qi-chest-lg" :src="iconUrl('chest-ark')" alt="" decoding="async" @error="onImgError">
+          </div>
           <div class="chest-reward-label">Твоя награда:</div>
           <div class="chest-reward-list">
             <div v-for="(item, idx) in (chestLoot.loot?.items || [])" :key="idx" class="chest-reward-item">
-              <span class="ico">{{ item.type === 'coins' ? '🪙' : item.type === 'xp' ? '⭐' : '💎' }}</span>
+              <img
+                class="qi qi-reward"
+                :src="item.type === 'coins' ? iconUrl('coin-gold') : item.type === 'xp' ? iconUrl('res-xp') : iconUrl('coin-gem')"
+                alt=""
+                decoding="async"
+                @error="onImgError"
+              >
               <span class="val">+{{ item.amount || item.value }}</span>
             </div>
           </div>
