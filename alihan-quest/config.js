@@ -1,7 +1,7 @@
 ﻿// API backend URL. Auto-updated by start-alihan-quest launcher.
 window.QUEST_CONFIG = {
-  API_BASE: 'https://salt-horse-matters-feel.trycloudflare.com',
+  API_BASE: 'https://brake-nashville-fairfield-vertical.trycloudflare.com',
   DEMO_TOKEN: 'demo-alihan-quest',
-  CACHE_VERSION: 62,
+  CACHE_VERSION: 63,
 };
 
