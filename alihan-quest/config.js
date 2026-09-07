@@ -1,7 +1,7 @@
 ﻿// API backend URL. Auto-updated by start-alihan-quest launcher.
 window.QUEST_CONFIG = {
-  API_BASE: 'https://wright-karl-publicly-nothing.trycloudflare.com',
+  API_BASE: 'https://catalyst-chance-funeral-exotic.trycloudflare.com',
   DEMO_TOKEN: 'demo-alihan-quest',
-  CACHE_VERSION: 68,
+  CACHE_VERSION: 69,
 };
 
