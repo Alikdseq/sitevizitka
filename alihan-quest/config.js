@@ -1,7 +1,7 @@
 ﻿// API backend URL. Auto-updated by start-alihan-quest launcher.
 window.QUEST_CONFIG = {
-  API_BASE: 'https://grande-announces-instance-visible.trycloudflare.com',
+  API_BASE: 'https://wild-sic-exit-survey.trycloudflare.com',
   DEMO_TOKEN: 'demo-alihan-quest',
-  CACHE_VERSION: 79,
+  CACHE_VERSION: 80,
 };
 
