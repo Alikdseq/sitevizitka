@@ -1,7 +1,7 @@
 ﻿// API backend URL. Auto-updated by start-alihan-quest launcher.
 window.QUEST_CONFIG = {
-  API_BASE: 'https://surprising-white-hearts-maps.trycloudflare.com',
+  API_BASE: 'https://complimentary-nec-regulated-divine.trycloudflare.com',
   DEMO_TOKEN: 'demo-alihan-quest',
-  CACHE_VERSION: 86,
+  CACHE_VERSION: 87,
 };
 
